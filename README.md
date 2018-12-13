@@ -1,1 +1,1 @@
-# Pima-Indians-Diabetes
+# Predicting the affordability of houses in Ames, Iowa
