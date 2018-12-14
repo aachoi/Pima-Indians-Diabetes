@@ -16,24 +16,25 @@ pdata <- read.csv(file = "HTrainLast.csv", stringsAsFactors = TRUE)
 # Get rid of the observation column 
 pdata = pdata[, -1]
 
-# Obtain the numeric data
-pdata.numeric <- select_if(pdata, is.numeric)
-# Encode our response variable (affordabilitty) into a dummy variable
-pdata.numeric$affordabilitty = revalue(pdata$affordabilitty,c("Affordable"="1","Unaffordable"="0"))
-
 # Create our training (90%) and validation (10%) set
 set.seed(1234) # for reproducibility
 traini = sample(1:3500,3500*0.9,replace=F)
 ptrain = pdata[traini,]
 ptest = pdata[-traini,]
 
-FullMod = glm(affordabilitty~(MSSubClass)+LotFrontage+LotArea+LandContour+LandSlope+BldgType+OverallQual+OverallCond+YearBuilt+YearRemodAdd+MasVnrArea+Foundation+TotalBsmtSF+X1stFlrSF+X2ndFlrSF+BsmtFullBath+BsmtHalfBath+FullBath+HalfBath+BedroomAbvGr+KitchenAbvGr+TotRmsAbvGrd+Functional+Fireplaces+GarageArea+OpenPorchSF+EnclosedPorch,family=binomial(),data=ptrain)
+# ??? apparently only predictors that we think are important
+# We need to explore what the full logistic regression is like so we know which predictors are important
+FullMod = glm(as.factor(affordabilitty)~(MSSubClass)+LotFrontage+LotArea+LandContour+LandSlope+BldgType+OverallQual+OverallCond+YearBuilt+YearRemodAdd+MasVnrArea+Foundation+TotalBsmtSF+X1stFlrSF+X2ndFlrSF+BsmtFullBath+BsmtHalfBath+FullBath+HalfBath+BedroomAbvGr+KitchenAbvGr+TotRmsAbvGrd+Functional+Fireplaces+GarageArea+OpenPorchSF+EnclosedPorch,family=binomial(),data=ptrain)
+
+summary(FullMod)
 
 predictprobs = predict(FullMod,ptest, type='response')
 predictlogit = rep('1',length(predictprobs))
 predictlogit[predictprobs>0.5] = '0'
-table(predictlogit,ptest$affordabilitty)
-mean(predictlogit==ptest$affordabilitty)
+confmatrix <- table(predictlogit,as.factor(ptest$affordabilitty))
+confmatrix
+sum(diag(confmatrix)/ sum(confmatrix)) # Accuracy
+rm(list = ls())
 ```
 
 # Data Cleaning
@@ -49,7 +50,6 @@ library(randomForest)
 library(readr)
 library(dplyr)
 
-
 # Import training and testing data
 real_training <- read.csv(file = "HTrainLast.csv", stringsAsFactors = TRUE)
 real_testing <- read.csv(file = "HTestLastNoY.csv", stringsAsFactors = TRUE)
@@ -61,8 +61,17 @@ combined = rbind(real_training,real_testing)
 # Get rid of the observation column 
 combined = combined[, -1]
 
+summary(combined)
+
 # Manually changing predictors to factors based on Data Description
 combined$MSSubClass <- as.factor(combined$MSSubClass)
+
+
+# Get rid of utilities, MiscFeature, MiscVal
+which(names(combined ) =='Utilities' | names(combined ) =='MiscFeature' |  names(combined ) =='MiscVal')
+combined=combined[,-c(9,74,75)] 
+
+###### Dealing with Missing Data
 
 # Changing all the NA's into "None" (another factor level)
 #  Alley - 4662 NA's (no alley access)
@@ -79,7 +88,15 @@ combined$BsmtFinType1 <- fct_explicit_na(combined$BsmtFinType1, na_level = "None
 combined$BsmtFinType2 <- fct_explicit_na(combined$BsmtFinType2, na_level = "None")
 # FireplaceQu - 2455 NA's (no fireplace)
 combined$FireplaceQu <- fct_explicit_na(combined$FireplaceQu, na_level = "None")
+# Fence - 3988 NA's (no fence)
+combined$Fence <- fct_explicit_na(combined$Fence, na_level = "None")
+
+# CATEGORICAL
+# If NA's in GarageType, GarageFinish, GarageQual, GarageCond all mean no garage, they should have the same number of missing values, we investigate further
+combined[(!is.na(combined$GarageType) & is.na(combined$GarageFinish)),c('GarageType','GarageFinish', 'GarageCars', 'GarageArea','GarageCond','GarageQual')]
+# We see that there are two observations, that were mislabeled as having detached garages, when in fact GarageFinish, GarageCars, GarageArea, GarageCond, GarageQual indicate that a garage doesn't exist
 # GarageType - 252 NA's (no garage)
+combined$GarageType[c(833, 4009)] <- NA # change the 2 outliers in GarageType to NA
 combined$GarageType <- fct_explicit_na(combined$GarageType, na_level = "None")
 # GarageFinish - 254 NA's (no garage)
 combined$GarageFinish <- fct_explicit_na(combined$GarageFinish, na_level = "None")
@@ -87,12 +104,20 @@ combined$GarageFinish <- fct_explicit_na(combined$GarageFinish, na_level = "None
 combined$GarageQual <- fct_explicit_na(combined$GarageQual, na_level = "None")
 # GarageCond - 254 NA's (no garage)
 combined$GarageCond <- fct_explicit_na(combined$GarageCond, na_level = "None")
-# Fence - 3988 NA's (no fence)
-combined$Fence <- fct_explicit_na(combined$Fence, na_level = "None")
+# Garage Year Built - 254 NA's
+# NA for GarageYrBlt shows "none" for GarageType, GarageFinish, GarageCars, GarageArea, GarageQual, GarageCond -> means no garage
+combined[which(is.na(combined$GarageYrBlt)),c('GarageYrBlt','GarageType', 'GarageFinish', 'GarageCars', 'GarageArea','GarageQual','GarageCond')]
+combined$GarageYrBlt[is.na(combined$GarageYrBlt)] = 0
+# OUTLIER: since we saw that for GarageYrBlt max = 2207
+combined[which(combined$GarageYrBlt > 2018),c('GarageYrBlt','YearBuilt','GarageType', 'GarageFinish', 'GarageCars', 'GarageArea','GarageQual','GarageCond')]
+# We know that there's one outlier, and it has a garage, but the GarageYrBlt is wrong, so we just assign GarageYrBlt = YearBuilt
+combined$GarageYrBlt[combined$GarageYrBlt==2207] = combined$YearBuilt[combined$GarageYrBlt==2207]
 
 # PoolQC = 3490 NA's (no pool)
 # Although all PoolQC with NA's are supposed to mean that they don't have a pool, we found 6 cases, where PoolQC = NA, even though they have a pool area
 combined[(combined$PoolArea > 0) & is.na(combined$PoolQC),c('PoolQC','PoolArea')]
+# Can see these outliers visually 
+ggplot(data = combined, aes(x = PoolQC, y = PoolArea)) +  geom_boxplot() 
 # Calculate the mean pool size for each level of pool condition
 combined[,c('PoolQC','PoolArea')] %>% group_by(PoolQC) %>%
   summarise(mean = mean(PoolArea), counts = n()) 
@@ -106,67 +131,8 @@ combined[4668,'PoolQC'] = 'Fa' #561
 # Assign the rest of the PoolQC that have a PoolArea=0, to none
 combined$PoolQC <- fct_explicit_na(combined$PoolQC, na_level = "None")
 
-# Replacing NA for MasVnrArea and MasVnrType
-# MasVnrType - 49 NA's (no masonry)   
-combined$MasVnrType <- fct_explicit_na(combined$MasVnrType, na_level = "None")
-# MasVnrArea - 46 NA's (no masonry area)  
-combined$MasVnrArea[is.na(combined$MasVnrArea)] = 0
-# There's 3 instances, where MasVnrType is NA, but it has a MasVnrArea, so we set these MasVnrType = "Other"
-combined[(combined$MasVnrArea > 0) & is.na(combined$MasVnrType),c("MasVnrType","MasVnrArea")]
-levels(combined$MasVnrType) = c(levels(combined$MasVnrType),"Other")
-combined$MasVnrType[combined$MasVnrType=="None" & combined$MasVnrArea!=0] = "Other"
 
-# Get rid of utilities, MiscFeature, MiscVal
-training=training[,-c(9,74,75)] 
-
-
-#training$GarageYrBlt = as.numeric(as.character(training$GarageYrBlt))
-#training$GarageYrBlt[training$GarageYrBlt=="2207"] = "None"
-# We can see that GarageType, GarageYrBlt, GarageFinish, GarageCars, GarageArea, GarageQual, GarageCond -> means no garage
-#training[which(is.na(training$GarageYrBlt)),c(58,59,60,61,62,63,64)]
-#training$GarageYrBlt[is.na(training$GarageYrBlt)] = 0
-#training$GarageCars[is.na(training$GarageCars)] = 0
-#training$GarageArea[is.na(training$GarageArea)] = 0
-#training$GarageQual <- fct_explicit_na(training$GarageQual, na_level = "None")
-
-
-
-# Getting only the data without NA's
-NoNaData = training[,colSums(is.na(training))==0]
-NoNaNumeric = select_if(NoNaData, is.numeric)
-NoNaCat = select_if(NoNaData, is.factor)
-
-# Replacing MSZoning NA's
-MSdata = cbind(MSZoning=training$MSZoning,NoNaData)
-MStrain = MSdata[complete.cases(MSdata),]
-MStest = MSdata[is.na(MSdata),]
-rfMS = randomForest(MSZoning~.,data=MStrain,mtry=54,importance=TRUE)
-pred.MS = predict(rfMS,newdata=MStest)
-training$MSZoning[is.na(training$MSZoning)] = pred.MS
-
-# Replacing LotFrontage NA
-library(gbm)
-Lotdata = cbind(LotFrontage=training$LotFrontage,NoNaData)
-Lottrain = Lotdata[complete.cases(Lotdata),]
-Lottest = Lotdata[is.na(Lotdata),]
-n = nrow(Lottrain)
-traini = sample(1:n,2930,replace=FALSE)
-Lottn = Lottrain[traini,]
-Lottt = Lottrain[-traini,]
-Lotgbm = gbm(LotFrontage~.,data=Lottrain,distribution="gaussian",n.tree=5000,interaction.depth=4)
-pred.Lot = predict(Lotgbm,newdata=Lottest,n.tree=5000)
-training$LotFrontage[is.na(training$LotFrontage)] = pred.Lot
-
-# Replacing Exteriror 1st with sample as its only 1 NA
-training$Exterior1st[is.na(training$Exterior1st)] = sample(levels(training$Exterior1st),sum(is.na(training$Exterior1st),na.rm=TRUE),replace=TRUE)
-
-# Replacing Exterior 2nd with sample as its only 1 NA
-training$Exterior2nd[is.na(training$Exterior2nd)] = sample(levels(training$Exterior2nd),sum(is.na(training$Exterior2nd),na.rm=TRUE),replace=TRUE)
-
-
-
-
-
+# 1st approach to MasVnrType and MasVnrArea
 # Replacing MasVnrType NA's
 #MasVnrdata = cbind(MasVnrType=training$MasVnrType,NoNaData)
 #MasVnrtrain = MasVnrdata[complete.cases(MasVnrdata),]
@@ -178,7 +144,6 @@ training$Exterior2nd[is.na(training$Exterior2nd)] = sample(levels(training$Exter
 #rfMasVnr = randomForest(MasVnrType~.,data=MasVnrtrain,mtry=54,importance=TRUE) #Creating Model to replace NA
 #pred.Vnr = predict(rfMasVnr,newdata=MasVnrtest)
 #training$MasVnrType[is.na(training$MasVnrType)] = pred.Vnr #Changing NA to predicted 
-
 
 # Replacing MasVnrArea 
 #library(gbm)
@@ -194,141 +159,287 @@ training$Exterior2nd[is.na(training$Exterior2nd)] = sample(levels(training$Exter
 #pred.Mas = predict(Masgbm,newdata=Mastest,n.tree=5000)
 #training$MasVnrArea[is.na(training$MasVnrArea)] = pred.Mas
 
+# 2nd Attempt for MasVnrArea and MasVnrType
+# Replacing NA for MasVnrArea and MasVnrType
+# MasVnrType - 49 NA's (no masonry)   
+combined$MasVnrType <- fct_explicit_na(combined$MasVnrType, na_level = "None")
+# MasVnrArea - 46 NA's (no masonry area)  
+combined$MasVnrArea[is.na(combined$MasVnrArea)] = 0
+# There's many instances, where MasVnrType is None, but it has a MasVnrArea, so we set these MasVnrType = "Other"
+ggplot(data = combined, aes(x = MasVnrType, y = MasVnrArea)) +  geom_boxplot() 
+combined[(combined$MasVnrArea > 0) &(combined$MasVnrType =="None"), c("MasVnrType","MasVnrArea")]
+# The ones where MasVnrArea = 1, must be an error, so we set it equal to 0.
+combined$MasVnrArea[(combined$MasVnrArea == 1)] = 0
+# Add a level to MasVnrType: "Other"
+levels(combined$MasVnrType) = c(levels(combined$MasVnrType),"Other")
+combined$MasVnrType[combined$MasVnrType=="None" & combined$MasVnrArea!=0] = "Other"
+ggplot(data = combined, aes(x = MasVnrType, y = MasVnrArea)) +  geom_boxplot() 
 
+# NUMERICAL
+# For Basement, we see that the same 2 observations are missing, and see that their BmtQual = None, which means that they have no basement, so we set the following equal to 0
+combined[is.na(combined$BsmtFinSF1), 29:37]
+# BsmtFinSF1 - 2 NA's
+combined$BsmtFinSF1[is.na(combined$BsmtFinSF1)] = 0
+# BsmtFinSF2 - 2 NA's
+combined$BsmtFinSF2[is.na(combined$BsmtFinSF2)] = 0
+# BsmtUnfSF - 2 NA's
+combined$BsmtUnfSF[is.na(combined$BsmtUnfSF)] = 0
+# TotalBsmtSF - 2 NA's
+combined$TotalBsmtSF[is.na(combined$TotalBsmtSF)] = 0
+# For Basement Bathrooms, we see that the same 4 observations are missing, and see that their BmtQual = None, which means that they have no basement, so we set them to 0
+which(is.na(combined$BsmtFullBath)) == which(is.na(combined$BsmtHalfBath))
+combined[is.na(combined$BsmtHalfBath),c('BsmtHalfBath','BsmtFullBath','BsmtQual')] 
+# Basement Full Bath - 4 NA's
+combined$BsmtFullBath[is.na(combined$BsmtFullBath)] = 0
+# Basement Half Bath - 4 NA's
+combined$BsmtHalfBath[is.na(combined$BsmtHalfBath)] = 0
+# NA for GarageCars & GarageArea shows "none" for GarageType, GarageFinish, GarageCars, GarageArea, GarageQual, GarageCond -> means no garage
+combined[(is.na(combined$GarageCars) & is.na(combined$GarageArea)),c('GarageType','GarageFinish', 'GarageCars', 'GarageArea','GarageCond','GarageQual')]
+# Garage Cars - 2 NA's
+combined$GarageCars[is.na(combined$GarageCars)] = 0
+# Garage Area - 2 NA's
+combined$GarageArea[is.na(combined$GarageArea)] = 0
 
+# Values that can't be relabeled as "None"/ 0 , we have to sample
+# First attempt: sample everything
+# MSZoning - 5 NA's
+combined$MSZoning[is.na(combined$MSZoning)] = sample(levels(combined$MSZoning),sum(is.na(combined$MSZoning),na.rm=TRUE),replace=TRUE)
+# LotFrontage - 815 NA's 
+combined$LotFrontage[is.na(combined$LotFrontage)] = median(combined$LotFrontage,na.rm=TRUE)
+# Electrical - 2 NA's
+#combined$Electrical[is.na(combined$Electrical)] = sample(levels(combined$Electrical),sum(is.na(combined$Electrical),na.rm=TRUE),replace=TRUE)
+# KitchenQual - 2 NA's
+#combined$KitchenQual[is.na(combined$KitchenQual)] = sample(levels(combined$KitchenQual),sum(is.na(combined$KitchenQual),na.rm=TRUE),replace=TRUE)
+# Functional - 3 NA's
+#combined$Functional[is.na(combined$Functional)] = sample(levels(combined$Functional),sum(is.na(combined$Functional),na.rm=TRUE),replace=TRUE)
+# Exterior 1st - 1 NA
+#combined$Exterior1st[is.na(combined$Exterior1st)] = sample(levels(combined$Exterior1st),sum(is.na(commbined$Exterior1st),na.rm=TRUE),replace=TRUE)
+# Exterior 2nd - 1 NA
+#combined$Exterior2nd[is.na(combined$Exterior2nd)] = sample(levels(combined$Exterior2nd),sum(is.na(combined$Exterior2nd),na.rm=TRUE),replace=TRUE)
+# Sale Type - 1 NA
+#combined$SaleType[is.na(combined$Exterior2nd)] = sample(levels(combined$Exterior2nd),sum(is.na(combined$Exterior2nd),na.rm=TRUE),replace=TRUE)
 
-# Making BsmtFinSF1 NA to 0
-training$BsmtFinSF1[is.na(training$BsmtFinSF1)] = 0
+# Second attempt:
+# Missing values < 5, reassign
+# Missing values >= 5, randomForest/boosting
 
-# Making BsmtFinSF2 NA to 0
-training$BsmtFinSF2[is.na(training$BsmtFinSF2)] = 0
-
-# Making BsmtUnfSF NA to 0
-training$BsmtUnfSF[is.na(training$BsmtUnfSF)] = 0
-
-# Making BsmtFinSF2 NA to 0
-training$TotalBsmtSF[is.na(training$TotalBsmtSF)] = 0
-
-# Sampling to fill NA of Electircal
-training$Electrical[is.na(training$Electrical)] = "SBrkr"
-
-# Basement Full Bath
-training[is.na(training$BsmtFullBath),]
-training$BsmtFullBath[is.na(training$BsmtFullBath)] = 0
-
-
-# Basement Half Bath
-training[is.na(training$BsmtHalfBath),]
-training$BsmtHalfBath[is.na(training$BsmtHalfBath)] = 0
-
-# Kitchen Qual
-training[is.na(training$KitchenQual),] 
-training$KitchenQual[is.na(training$KitchenQual)] = "TA"
-
-# Functional
-training[is.na(training$Functional),] 
-training$Functional[is.na(training$Functional)] = "Typ"
-
-# Garage Year Built
-training$GarageYrBlt[is.na(training$GarageYrBlt)] = 2018
-training$GarageYrBlt[training$GarageYrBlt==2018] = training$YearBuilt[training$GarageYrBlt==2018]
-training$GarageYrBlt[training$GarageYrBlt==2207] = training$YearBuilt[training$GarageYrBlt==2207]
-
-# Garage Cars
-training$GarageCars[is.na(training$GarageCars)] = 0
-
-# Garage Area
-training$GarageArea[is.na(training$GarageArea)] = 0
-
-# Sale Type: the only missing data is normal
-training[is.na(training$SaleType),c('SaleCondition')]
-# Noraml is most associated with "WD"
-table(training$SaleCondition, training$SaleType)
+# Values with < 5 missing values, but the distribution of categories was heavily skewed, we filled it in with the mode
+# Electrical - 2 NA's
+ggplot(combined, aes(Electrical)) + geom_bar()
+combined$Electrical[is.na(combined$Electrical)] = "SBrkr"
+# KitchenQual - 2 NA's
+ggplot(combined, aes(KitchenQual)) + geom_bar()
+combined$KitchenQual[is.na(combined$KitchenQual)] = "TA"
+# Functional - 3 NA's
+ggplot(combined, aes(Functional)) + geom_bar()
+combined$Functional[is.na(combined$Functional)] = "Typ"
+# Exterior 1st - 1 NA
+ggplot(combined, aes(Exterior1st)) + geom_bar()
+combined$Exterior1st[is.na(combined$Exterior1st)] = "VinylSd"
+# Exterior 2nd - 1 NA
+ggplot(combined, aes(Exterior2nd)) + geom_bar()
+combined$Exterior2nd[is.na(combined$Exterior2nd)] = "VinylSd"
+# Sale Type - 1 NA
+# Since SaleType is correlated w/ SaleCondition, we see Normal is most associated with "WD"
+combined[is.na(combined$SaleType),c('SaleType', 'SaleCondition')]
+table(combined$SaleCondition, combined$SaleType) # table showing Normal & "WD"
+ggplot(combined, aes(SaleCondition)) + geom_bar(aes(fill = SaleType)) # graph showing Normal & "WD"
 # Replace all NA sale type w/ "WD"
-training$SaleType[is.na(training$SaleType)] = 'WD'
+combined$SaleType[is.na(combined$SaleType)] = 'WD'
 
+##################################################
+# Missing values >= 5
+# Prediction Model
+# Getting the data without NA's
+NoNaData = combined[,colSums(is.na(combined))==0]
+NoNaNumeric = select_if(NoNaData, is.numeric) # numeric
+NoNaCat = select_if(NoNaData, is.factor) # categorical
 
+# Replacing MSZoning NA's
+MSdata = cbind(MSZoning=combined$MSZoning,NoNaData)
+MStrain = MSdata[complete.cases(MSdata),]
+MStest = MSdata[is.na(MSdata),]
+rfMS = randomForest(MSZoning~.,data=MStrain,mtry=54,importance=TRUE)
+pred.MS = predict(rfMS,newdata=MStest)
+training$MSZoning[is.na(training$MSZoning)] = pred.MS
 
+# Replacing LotFrontage NA
+library(gbm)
+Lotdata = cbind(LotFrontage=training$LotFrontage,NoNaData)
+Lottrain = Lotdata[complete.cases(Lotdata),]
+Lottest = Lotdata[is.na(Lotdata),]
+n = nrow(Lottrain)
+traini = sample(1:n,2930,replace=FALSE)
+Lottn = Lottrain[traini,]
+Lottt = Lottrain[-traini,]
+Lotgbm = gbm(LotFrontage~.,data=Lottrain,distribution="gaussian",n.tree=500,interaction.depth=4)
+pred.Lot = predict(Lotgbm,newdata=Lottest,n.tree=500)
+training$LotFrontage[is.na(training$LotFrontage)] = pred.Lot
+##################################################
+
+###### Feature Engineering
 # House Age And Yes/No for remodeled
 # Remodeled (Categorical)
-training$Remodeled <- rep("Yes", nrow(training))
-training$Remodeled[which (training$YearRemodAdd - training$YearBuilt==0)]<- "No"
-training$Remodeled <- as.factor(training$Remodeled)
+combined$Remodeled <- rep("Yes", nrow(combined))
+combined$Remodeled[which (combined$YearRemodAdd - combined$YearBuilt==0)]<- "No"
+combined$Remodeled <- as.factor(combined$Remodeled)
 # House Age
 # age = 2018 - yearbuilt (if not remodeled)
-training$HouseAge[which(training$Remodeled == "No")] <- 2018 - training$YearBuilt[which(training$Remodeled == "No")]
+combined$HouseAge[which(combined$Remodeled == "No")] <- 2018 - combined$YearBuilt[which(combined$Remodeled == "No")]
 # age = 2018 - yearRemodeled (if remodeled)
-training$HouseAge[which(training$Remodeled == "Yes")] <- 2018 - training$YearRemodAdd[which(training$Remodeled == "Yes")]
-# Condense levels of LotShape
-training$LotShape <- as.character(training$LotShape)
-training$LotShape[which (training$LotShape!= "Reg")] <- "IR"
-training$LotShape <- as.factor(training$LotShape)
+combined$HouseAge[which(combined$Remodeled == "Yes")] <- 2018 - combined$YearRemodAdd[which(combined$Remodeled == "Yes")]
+# We can drop YearBuilt, YearRemodAdd 
+combined = combined[,colnames(combined) != "YearBuilt"]
+combined = combined[,colnames(combined) != "YearRemodAdd"]
 
 # Taking out BsmtFinSF1 and 2
-training$BsmtTotalFin = training$BsmtFinSF1 + training$BsmtFinSF2
+combined$BsmtTotalFin = combined$BsmtFinSF1 + combined$BsmtFinSF2
+# We can drop BsmtFinSF1, BsmtFinSF2
+combined = combined[,colnames(combined) != "BsmtFinSF2"]
+combined = combined[,colnames(combined) != "BsmtFinSF1"]
 
-training = training[,colnames(training) != "BsmtFinSF2"]
-training = training[,colnames(training) != "BsmtFinSF1"]
+# Condense levels of LotShape
+combined$LotShape <- as.character(combined$LotShape)
+combined$LotShape[which (combined$LotShape!= "Reg")] <- "IR"
+combined$LotShape <- as.factor(combined$LotShape)
 
+# Reorder our columns so that affordabilitty is last predictor
+combined2 <- combined
+combined <- cbind(combined2[,-73], affordabilitty = combined2$affordabilitty)
+rm(combined2)
+```
 
-# Splitting training by numeric and factors
-training.numeric <- select_if(training, is.numeric)
-full.numeric = select_if(training, is.numeric)
-training.factors <- select_if(training, is.factor)
-full.factors =select_if(training, is.factor) 
+Correlation between numeric predictors
+```{r}
+# Splitting combined by numeric and factors
+combined.numeric <- select_if(combined, is.numeric)
+combined.factors =select_if(combined, is.factor) 
 
-
-################################# 
+# Correlation between our numeric predictors
 library(corrplot)
-corr <- round(cor(training.numeric),3)
-corrplot.mixed(corr, lower = "number", upper = "pie")
+library(reshape2)
+library(ggpubr)
+# Get upper triangle of the correlation matrix
+  get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+  }
+corr <- round(cor(combined.numeric),3)
+# Visualize correlation matrix
+upper_tri <- get_upper_tri(corr)
+melted_corr <- melt(upper_tri, na.rm = TRUE)
+corr_plot <- ggplot(data = melted_corr, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 60, vjust = 1, 
+    size = 8, hjust = 1))+ coord_fixed() + labs(title = "Correlation Matrix of Numeric Predictors") + theme(axis.title.x = element_blank()) + theme(axis.title.y = element_blank()) + theme(plot.title = element_text(hjust = 0.5))
+corr_plot
+ggexport(plotlist = list(corr_plot),filename = "corr_plot.png")
+
 # See which predictors have a correlation equal to or higher than 0.7
 corr[which(abs(corr) >=0.7 & abs(corr) !=1 )]
 which(abs(corr) >=0.7 & abs(corr) !=1 )
 temp_ind <- which(abs(corr) >=0.7 & abs(corr) !=1  , arr.ind = TRUE)
 corr_table <- data.frame(predictors = paste(rownames(corr)[temp_ind[,"row"]],  colnames(corr)[temp_ind[,"col"]], sep=', '), values = corr[which(abs(corr) >=0.7 & abs(corr) !=1 )])
+corr_table
 
-training.numeric = training.numeric[,colnames(training.numeric) != "YearBuilt"]
-training.numeric = training.numeric[,colnames(training.numeric) != "YearRemodAdd"]
-training.numeric = training.numeric[,colnames(training.numeric) != "X1stFlrSF"]
-training.numeric = training.numeric[,colnames(training.numeric) != "TotRmsAbvGrd"]
-training.numeric = training.numeric[,colnames(training.numeric) != "GarageCars"]
-# Adding Affordability to Numeric Variables 
-pca = princomp(training.numeric,cor=T)
-install.packages("factoextra")
+# Highly correlated pairs:
+# We drop GarageCars, GarageArea
+# We drop X1stFlrSF, TotalBsmtSF
+# We drop GrLivArea, TotRmsAbvGrd
+
+training = combined[1:3500,]
+testing = combined[3501:5000,]
+training = training[complete.cases(training),]
+
+# Visualizing different densities w/ training data
+# GarageCars, GarageArea
+ggplot(data = training, aes(x = GarageArea, color = affordabilitty)) + geom_density() + labs(title = "Density Plot of GarageArea by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = training, aes(x = GarageCars, color = affordabilitty)) + geom_density()  + labs(title = "Density Plot of GarageCars by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
+# X1stFlrSF, TotalBsmtSF
+ggplot(data = training, aes(x = X1stFlrSF, color = affordabilitty)) + geom_density()  + labs(title = "Density Plot of 1st Floor SF by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = training, aes(x = TotalBsmtSF, color = affordabilitty)) + geom_density()  + labs(title = "Density Plot of Total Basement SF by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
+# GrLivArea, TotRmsAbvGrd 
+ggplot(data = training, aes(x = GrLivArea, color = affordabilitty)) + geom_density()  + labs(title = "Density Plot of Above Ground Living SF by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = training, aes(x = TotRmsAbvGrd, color = affordabilitty)) + geom_density() + labs(title = "Density Plot of Total Rooms Above Ground by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
+
+# Drop GarageCars, X1stFlrSF, and TotRmsAbvGrd from our combined df
+combined.numeric = combined.numeric[,colnames(combined.numeric) != "GarageCars"]
+combined.numeric = combined.numeric[,colnames(combined.numeric) != "X1stFlrSF"]
+combined.numeric = combined.numeric[,colnames(combined.numeric) != "TotRmsAbvGrd"]
+```
+
+PCA on the numeric variables
+```{r}
 library(factoextra)
+library(data.table)
+library(formattable)
+
+pca = princomp(combined.numeric,cor=T)
 eig.val <- get_eigenvalue(pca)
 eig.val
 scree.plot <- fviz_eig(pca, addlabels = TRUE, ylim = c(0,30)) # to control how many dimensions to show ncp = 25
 scree.plot
+# Print scree plot to a png file
+ggexport(plotlist = list(scree.plot),filename = "screeplot.png")
+
+# Make our eig value table pretty
+customBlack = "#000"
+customGreen = "#71CA97"
+customRed = "#ff7f7f"
+names(eig.val) <- c("Eigenvalue", "Variance %", "Cumulative Variance %")
+eig.val <- round(eig.val, 3)
+rownames(eig.val) <- c(1:29)
+eig.val$Dimension <- seq(1:29)
+eig.val <- eig.val[,c(4,1,2,3)]
+
+eigenvalue_formatter <- formatter("span", style = x ~ style( 
+              color = ifelse(x > 1, customGreen, ifelse(x < 1, "black", "black"))))
+
+variance_formatter <- formatter("span", style = x ~ style( 
+              color = ifelse(x > 95, customGreen, ifelse(x < 95, customRed, "black"))))
+
+eig.table <- formattable(eig.val, align = c("l", "c","c","r"),
+            list(`Dimension` = formatter("span", style = ~ style(color = "grey",font.weight = "bold")), 
+                 `Eigenvalue` = eigenvalue_formatter,
+                 `Cumulative Variance %` = variance_formatter))
+eig.table
+ggexport(plotlist = list(eig.table),filename = "eigtable.png")
 
 x = summary(pca)
 pc.comp <- pca$scores
-pcdf = pc.comp[,1:22]
+pcdf = pc.comp[,1:23]
 pcdf = data.frame(pcdf)
-colnames(pcdf) = c(LETTERS[1:22])
+colnames(pcdf) = c(1:23)
 
-training.factors = cbind(training.factors,pcdf)
-training.factors = training.factors[,colnames(training.factors) != "Exterior2nd"]
+# Our final dataframe after PCA
+combined_pca = cbind(combined.factors[,-44],pcdf, affordabilitty = combined.factors$affordabilitty)
 
-testing1 = training.factors[3501:5000,]
-training1 = training.factors[1:3500,]
+# Why did we drop exterior2nd
+# combined_pca = training.factors[,colnames(training.factors) != "Exterior2nd"]
+
+# Split our PCA combined data into the original testing and training set
+testing1 = combined_pca[3501:5000,]
+training1 = combined_pca[1:3500,]
 training1 = training1[complete.cases(training1),]
 ```
 
 
+
 Splitting the training to 90% and 10%
 ```{r}
-n=dim(training1)[1]
-traini = sample(1:n,n*0.9,replace=FALSE)
-btrain = training1[traini,]
-btest = training1[-traini,]
+set.seed(1234)
+traini = sample(1:nrow(training1),nrow(training1*0.9),replace=FALSE)
+train_train = training1[traini,]
+train_test = training1[-traini,]
 ```
 
 Logistic Model With all predictors included using Cleaned Data
 ```{r}
 m2 = glm(affordabilitty~.,family=binomial(),data=btrain)
-
 
 predictprobs = predict(m2,btest, type='response')
 predictlogit = rep('Affordable',length(predictprobs))
@@ -336,6 +447,46 @@ predictlogit[predictprobs>0.5] = 'Unaffordable'
 table(predictlogit,btest$affordabilitty)
 mean(predictlogit==btest$affordabilitty)
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# How do we deal with Basement?
+#combined[(is.na(combined$BsmtQual)) & !is.na(combined$BsmtCond),c('BsmtQual','BsmtCond')]
+
+
+ggplot(combined, aes(Electrical)) + geom_bar()
+#exploratory analysis
+
+
+head(combined[,c('Exterior1st', 'Exterior2nd')])
+levels(combined$Exterior1st)
+levels(combined$Exterior2nd)
+levels(combined$Exterior2nd)[6] <- "CemntBd"
+levels(combined$Exterior1st) = c(levels(combined$Exterior1st),"Other")
+levels(combined$Exterior1st)
+combined[which(as.character(combined$Exterior1st) != as.character(combined$Exterior2nd)), c('Exterior1st', 'Exterior2nd')]
+
+```
+
+
 
 
 
