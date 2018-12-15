@@ -117,15 +117,15 @@ garageyrblt_outlier <- ggplot(data = combined, aes(x = GarageQual, y = GarageYrB
 combined$GarageYrBlt[combined$GarageYrBlt==2207] = combined$YearBuilt[combined$GarageYrBlt==2207]
 # Visually see impact of removing outlier 
 garageyrblt_outlier_after <- ggplot(data = combined, aes(x = GarageQual, y = GarageYrBlt)) +  geom_boxplot(aes(fill = GarageQual), show.legend = FALSE)
-# Creating figure 2
+# Creating figure 1
 figure <- ggarrange(garageyrblt_outlier, garageyrblt_outlier_after, 
           labels = c("A", "B"),
           ncol = 2, nrow = 1)
 
 garageyrblt<- annotate_figure(figure,
                 top = text_grob("Comparison of Garage Year Built Across Garage Quality", face = "bold", size = 12, hjust = 0.5),
-                bottom = text_grob("Figure 2A: Identifying the outlier in GarageYrBlt. The outlier observation has a GarageQual ‘TA’, meaning  \n that it has a garage on the property. We set the GarageYrBlt value equal to the YearBuilt value. \n \n Figure 2B: Reassigning our outlier positively impacted our predictor GarageYrBlt.",hjust = 0, x = 0, face = "italic", size = 10),
-                fig.lab = "Figure 2", fig.lab.face = "bold"
+                bottom = text_grob("Figure 1A: Identifying the outlier in GarageYrBlt. The outlier observation has a GarageQual ‘TA’, meaning  \n that it has a garage on the property. We set the GarageYrBlt value equal to the YearBuilt value. \n \n Figure 1B: Reassigning our outlier positively impacted our predictor GarageYrBlt.",hjust = 0, x = 0, face = "italic", size = 10),
+                fig.lab = "Figure 1", fig.lab.face = "bold"
                 )
 garageyrblt
 ggexport(plotlist = list(garageyrblt),filename = "garageyrblt.png")
@@ -150,14 +150,14 @@ combined[4668,'PoolQC'] = 'Fa' #561
 combined$PoolQC <- fct_explicit_na(combined$PoolQC, na_level = "None")
 # Visually see impact of removing outlier 
 poolqc_outlier_after <- ggplot(data = combined, aes(x = PoolQC, y = PoolArea)) +  geom_boxplot(aes(fill = PoolQC), show.legend = FALSE) +  scale_fill_brewer(palette="Dark2")
-# Creating Figure 3
+# Creating Figure 2
 figure <- ggarrange(poolqc_outlier, poolqc_outlier_after, 
           labels = c("A", "B"),
           ncol = 2, nrow = 1)
 poolqc<- annotate_figure(figure,
                 top = text_grob("Comparison of Pool Area Across Pool Quality", face = "bold", size = 12, hjust = 0.5),
-                bottom = text_grob("Figure 3A: Identifying the outliers in PoolQC. The 6 outlier observations have no pool, but 3 unique Pool \n Area values. \n \n Figure 3B: Relabeling our outliers positively impacted our predictor PoolQC.",hjust = 0, x = 0, face = "italic", size = 10),
-                fig.lab = "Figure 3", fig.lab.face = "bold",
+                bottom = text_grob("Figure 2A: Identifying the outliers in PoolQC. The 6 outlier observations have no pool, but 3 unique Pool \n Area values. \n \n Figure 2B: Relabeling our outliers positively impacted our predictor PoolQC.",hjust = 0, x = 0, face = "italic", size = 10),
+                fig.lab = "Figure 2", fig.lab.face = "bold",
                 )
 poolqc
 ggexport(plotlist = list(poolqc),filename = "poolqc.png")
@@ -208,14 +208,14 @@ levels(combined$MasVnrType) = c(levels(combined$MasVnrType),"Other")
 combined$MasVnrType[combined$MasVnrType=="None" & combined$MasVnrArea!=0] = "Other"
 # Visually see impact of removing outlier 
 masvnrtype_outlier_after <- ggplot(data = combined, aes(x = MasVnrType, y = MasVnrArea)) +  geom_boxplot(aes(fill = MasVnrType), show.legend = FALSE) + scale_fill_brewer(palette="YlOrRd")
-# Creating Figure 4
+# Creating Figure 3
 figure <- ggarrange(masvnrtype_outlier, masvnrtype_outlier_after, 
           labels = c("A", "B"),
           ncol = 2, nrow = 1)
 masvnrtype <- annotate_figure(figure,
                 top = text_grob("Comparison of Masonry Veneer Area Across Type", face = "bold", size = 12, hjust = 0.5),
-                bottom = text_grob("Figure 4A: Identifying the outliers in MasVnrType. The 16 outlier observations are labeled in the ‘None’ \n level of MasVnrType. This indicates, they have no Masonry Veneer, but they have a corresponding \n Masonry Veneer Area. We reclassify them as “Other”. \n \n Figure 4B: Relabeling our outliers positively impacted our predictor MasVnrType. The classification of a \n lack of Masonry Veneer is consistent between MasVnrArea and MasVnrType.",hjust = 0, x = 0, face = "italic", size = 10),
-                fig.lab = "Figure 4", fig.lab.face = "bold",
+                bottom = text_grob("Figure 3A: Identifying the outliers in MasVnrType. The 16 outlier observations are labeled in the ‘None’ \n level of MasVnrType. This indicates, they have no Masonry Veneer, but they have a corresponding \n Masonry Veneer Area. We reclassify them as “Other”. \n \n Figure 3B: Relabeling our outliers positively impacted our predictor MasVnrType. The classification of a \n lack of Masonry Veneer is consistent between MasVnrArea and MasVnrType.",hjust = 0, x = 0, face = "italic", size = 10),
+                fig.lab = "Figure 3", fig.lab.face = "bold",
                 )
 masvnrtype
 ggexport(plotlist = list(masvnrtype),filename = "masvnrtype.png")
@@ -305,17 +305,17 @@ ggplot(combined, aes(SaleCondition)) + geom_bar(aes(fill = SaleType)) # graph sh
 combined$SaleType[is.na(combined$SaleType)] = 'WD'
 
 
-# Figure 5
+# Figure 4
 figure <- ggarrange(electrical, kitchenqual, functional, exterior1st, exterior2nd, saletype,
           labels = c("A", "B", "C", "D", "E","F"),
           ncol = 2, nrow = 3)
-fig5 <- annotate_figure(figure,
+fig4 <- annotate_figure(figure,
                 top = text_grob("Exploratory Analysis for Imputation", face = "bold", size = 12, hjust = 0.5),
                 bottom = text_grob(" All figures: There is a clear factor level where the majority of the observations lie. We assign the missing \n values for each predictor to the level with the highest frequency.",hjust = 0, x = 0, face = "italic", size = 10),
-                fig.lab = "Figure 5", fig.lab.face = "bold",
+                fig.lab = "Figure 4", fig.lab.face = "bold",
                 )
-ggexport(plotlist = list(fig5),filename = "figure5.png")
-rm(list = c("electrical", "kitchenqual", "functional", "exterior1st", "exterior2nd","saletype", "figure", "fig5"))
+ggexport(plotlist = list(fig4),filename = "figure4.png")
+rm(list = c("electrical", "kitchenqual", "functional", "exterior1st", "exterior2nd","saletype", "figure", "fig4"))
 
 ##################################################
 # Missing values >= 5
@@ -377,8 +377,6 @@ combined$LotShape <- as.factor(combined$LotShape)
 combined2 <- combined
 combined <- cbind(combined2[,-73], affordabilitty = combined2$affordabilitty)
 rm(combined2)
-
-
 ```
 
 Correlation between numeric predictors
@@ -406,9 +404,15 @@ corr_plot <- ggplot(data = melted_corr, aes(Var2, Var1, fill = value))+
    name="Pearson\nCorrelation") +
   theme_minimal()+ 
  theme(axis.text.x = element_text(angle = 60, vjust = 1, 
-    size = 8, hjust = 1))+ coord_fixed() + labs(title = "Correlation Matrix of Numeric Predictors") + theme(axis.title.x = element_blank()) + theme(axis.title.y = element_blank()) + theme(plot.title = element_text(hjust = 0.5))
+    size = 8, hjust = 1))+ coord_fixed() +  theme(axis.title.x = element_blank()) + theme(axis.title.y = element_blank())
 corr_plot
-ggexport(plotlist = list(corr_plot),filename = "corr_plot.png")
+
+corr_plot_annotate<- annotate_figure(corr_plot,
+                top = text_grob("Correlation Matrix of Numeric Predictors", face = "bold", size = 12, hjust = 0.5),
+                bottom = text_grob("Correlation matrix of the numeric predictors for both the training and testing set.",hjust = 0, x = 0, face = "italic", size = 10),
+                fig.lab = "Figure 5", fig.lab.face = "bold"
+                )
+ggexport(plotlist = list(corr_plot_annotate),filename = "corrplot.png")
 
 # See which predictors have a correlation equal to or higher than 0.7
 corr[which(abs(corr) >=0.7 & abs(corr) !=1 )]
@@ -416,6 +420,8 @@ which(abs(corr) >=0.7 & abs(corr) !=1 )
 temp_ind <- which(abs(corr) >=0.7 & abs(corr) !=1  , arr.ind = TRUE)
 corr_table <- data.frame(predictors = paste(rownames(corr)[temp_ind[,"row"]],  colnames(corr)[temp_ind[,"col"]], sep=', '), values = corr[which(abs(corr) >=0.7 & abs(corr) !=1 )])
 corr_table
+
+rm(list = c("corr", "upper_tri", "melted_corr", "corr_plot", "corr_plot_annotate", "temp_ind"))
 
 # Highly correlated pairs:
 # We drop GarageCars, GarageArea
@@ -427,15 +433,58 @@ testing = combined[3501:5000,]
 training = training[complete.cases(training),]
 
 # Visualizing different densities w/ training data
-# GarageCars, GarageArea
-ggplot(data = training, aes(x = GarageArea, color = affordabilitty)) + geom_density() + labs(title = "Density Plot of GarageArea by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
-ggplot(data = training, aes(x = GarageCars, color = affordabilitty)) + geom_density()  + labs(title = "Density Plot of GarageCars by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
-# X1stFlrSF, TotalBsmtSF
-ggplot(data = training, aes(x = X1stFlrSF, color = affordabilitty)) + geom_density()  + labs(title = "Density Plot of 1st Floor SF by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
-ggplot(data = training, aes(x = TotalBsmtSF, color = affordabilitty)) + geom_density()  + labs(title = "Density Plot of Total Basement SF by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
-# GrLivArea, TotRmsAbvGrd 
-ggplot(data = training, aes(x = GrLivArea, color = affordabilitty)) + geom_density()  + labs(title = "Density Plot of Above Ground Living SF by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
-ggplot(data = training, aes(x = TotRmsAbvGrd, color = affordabilitty)) + geom_density() + labs(title = "Density Plot of Total Rooms Above Ground by Affordabilitty") + theme(plot.title = element_text(hjust = 0.5))
+# GarageCars, GarageArea scatter plot colored by affordabilitty
+garage <- ggscatter(training, x = "GarageArea", y = "GarageCars",
+                    color = "affordabilitty", palette = "jco",
+                    size = 3, alpha = 0.6) + border()                                         
+# Marginal density plot of x (top panel) and y (right panel)
+x1plot <- ggdensity(training, "GarageArea", fill = "affordabilitty",
+                    palette = "jco")
+y1plot <- ggdensity(training, "GarageCars", fill = "affordabilitty", 
+                    palette = "jco")+ rotate()
+# Cleaning the plots
+y1plot <- y1plot + clean_theme() 
+x1plot <- x1plot + clean_theme()
+
+# X1stFlrSF, TotalBsmtSF scatter plot colored by affordabilitty
+sf <- ggscatter(training, x = "X1stFlrSF", y = "TotalBsmtSF",
+                color = "affordabilitty", palette = "jco",
+                size = 3, alpha = 0.6) + border()                                         
+x2plot <- ggdensity(training, "X1stFlrSF", fill = "affordabilitty",
+                    palette = "jco") 
+y2plot <- ggdensity(training, "TotalBsmtSF", fill = "affordabilitty", 
+                    palette = "jco")+ rotate()
+# Cleaning the plots
+y2plot <- y2plot + clean_theme() 
+x2plot <- x2plot + clean_theme()
+
+# GrLivArea, TotRmsAbvGrd scatter plot colored by affordabilitty
+gr <- ggscatter(training, x = "GrLivArea", y = "TotRmsAbvGrd",
+                color = "affordabilitty", palette = "jco",
+                size = 3, alpha = 0.6) + border()                                         
+x3plot <- ggdensity(training, "GrLivArea", fill = "affordabilitty",
+                    palette = "jco") 
+y3plot <- ggdensity(training, "TotRmsAbvGrd", fill = "affordabilitty", 
+                    palette = "jco")+ rotate()
+# Cleaning the plots
+y3plot <- y3plot + clean_theme() 
+x3plot <- x3plot + clean_theme()
+
+# Arranging the plot
+combined <- ggarrange(x1plot, NULL, x2plot, NULL, garage, y1plot, sf, y2plot,  x3plot, NULL, NULL, NULL, gr, y3plot,
+                      ncol = 4, nrow = 4,  align = "hv", 
+                      widths = c(2, 1), heights = c(1, 2),
+                      common.legend = TRUE, legend = "bottom",
+                      labels = c("A","","B","","" ,"","","", "C")
+)
+
+combined_annotate<- annotate_figure(combined,
+                top = text_grob("Density Plots of Highly Correlated Variables", face = "bold", size = 17, hjust = 0.5),
+                fig.lab = "Figure 6", fig.lab.face = "bold", fig.lab.size = 13
+                )
+ggexport(plotlist = list(combined_annotate), height = 900, width = 900, filename = "density_highly_correlated.jpeg")
+
+rm(list = c("garage", "x1plot", "y1plot", "sf", "x2plot", "y2plot", "gr","x3plot", "y3plot","combined", "combined_annotate"))
 
 # Drop GarageCars, X1stFlrSF, and TotRmsAbvGrd from our combined df
 combined.numeric = combined.numeric[,colnames(combined.numeric) != "GarageCars"]
