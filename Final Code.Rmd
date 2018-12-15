@@ -49,6 +49,7 @@ library(forcats)
 library(randomForest)
 library(readr)
 library(dplyr)
+library(ggpubr)
 
 # Import training and testing data
 real_training <- read.csv(file = "HTrainLast.csv", stringsAsFactors = TRUE)
@@ -107,17 +108,34 @@ combined$GarageCond <- fct_explicit_na(combined$GarageCond, na_level = "None")
 # Garage Year Built - 254 NA's
 # NA for GarageYrBlt shows "none" for GarageType, GarageFinish, GarageCars, GarageArea, GarageQual, GarageCond -> means no garage
 combined[which(is.na(combined$GarageYrBlt)),c('GarageYrBlt','GarageType', 'GarageFinish', 'GarageCars', 'GarageArea','GarageQual','GarageCond')]
-combined$GarageYrBlt[is.na(combined$GarageYrBlt)] = 0
+combined$GarageYrBlt[is.na(combined$GarageYrBlt)] = 2018
 # OUTLIER: since we saw that for GarageYrBlt max = 2207
 combined[which(combined$GarageYrBlt > 2018),c('GarageYrBlt','YearBuilt','GarageType', 'GarageFinish', 'GarageCars', 'GarageArea','GarageQual','GarageCond')]
+# Can see these outlier visually
+garageyrblt_outlier <- ggplot(data = combined, aes(x = GarageQual, y = GarageYrBlt)) +  geom_boxplot(aes(fill = GarageQual), show.legend = FALSE)
 # We know that there's one outlier, and it has a garage, but the GarageYrBlt is wrong, so we just assign GarageYrBlt = YearBuilt
 combined$GarageYrBlt[combined$GarageYrBlt==2207] = combined$YearBuilt[combined$GarageYrBlt==2207]
+# Visually see impact of removing outlier 
+garageyrblt_outlier_after <- ggplot(data = combined, aes(x = GarageQual, y = GarageYrBlt)) +  geom_boxplot(aes(fill = GarageQual), show.legend = FALSE)
+# Creating figure 2
+figure <- ggarrange(garageyrblt_outlier, garageyrblt_outlier_after, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+
+garageyrblt<- annotate_figure(figure,
+                top = text_grob("Comparison of Garage Year Built Across Garage Quality", face = "bold", size = 12, hjust = 0.5),
+                bottom = text_grob("Figure 2A: Identifying the outlier in GarageYrBlt. The outlier observation has a GarageQual ‘TA’, meaning  \n that it has a garage on the property. We set the GarageYrBlt value equal to the YearBuilt value. \n \n Figure 2B: Reassigning our outlier positively impacted our predictor GarageYrBlt.",hjust = 0, x = 0, face = "italic", size = 10),
+                fig.lab = "Figure 2", fig.lab.face = "bold"
+                )
+garageyrblt
+ggexport(plotlist = list(garageyrblt),filename = "garageyrblt.png")
+rm(list = c("garageyrblt_outlier", "garageyrblt_outlier_after", "figure", "garageyrblt"))
 
 # PoolQC = 3490 NA's (no pool)
 # Although all PoolQC with NA's are supposed to mean that they don't have a pool, we found 6 cases, where PoolQC = NA, even though they have a pool area
 combined[(combined$PoolArea > 0) & is.na(combined$PoolQC),c('PoolQC','PoolArea')]
 # Can see these outliers visually 
-ggplot(data = combined, aes(x = PoolQC, y = PoolArea)) +  geom_boxplot() 
+poolqc_outlier <- ggplot(data = combined, aes(x = PoolQC, y = PoolArea)) +  geom_boxplot(aes(fill = PoolQC), show.legend = FALSE) +  scale_fill_brewer(palette="Dark2")
 # Calculate the mean pool size for each level of pool condition
 combined[,c('PoolQC','PoolArea')] %>% group_by(PoolQC) %>%
   summarise(mean = mean(PoolArea), counts = n()) 
@@ -130,7 +148,20 @@ combined[4555,'PoolQC'] = 'Fa' #561
 combined[4668,'PoolQC'] = 'Fa' #561
 # Assign the rest of the PoolQC that have a PoolArea=0, to none
 combined$PoolQC <- fct_explicit_na(combined$PoolQC, na_level = "None")
-
+# Visually see impact of removing outlier 
+poolqc_outlier_after <- ggplot(data = combined, aes(x = PoolQC, y = PoolArea)) +  geom_boxplot(aes(fill = PoolQC), show.legend = FALSE) +  scale_fill_brewer(palette="Dark2")
+# Creating Figure 3
+figure <- ggarrange(poolqc_outlier, poolqc_outlier_after, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+poolqc<- annotate_figure(figure,
+                top = text_grob("Comparison of Pool Area Across Pool Quality", face = "bold", size = 12, hjust = 0.5),
+                bottom = text_grob("Figure 3A: Identifying the outliers in PoolQC. The 6 outlier observations have no pool, but 3 unique Pool \n Area values. \n \n Figure 3B: Relabeling our outliers positively impacted our predictor PoolQC.",hjust = 0, x = 0, face = "italic", size = 10),
+                fig.lab = "Figure 3", fig.lab.face = "bold",
+                )
+poolqc
+ggexport(plotlist = list(poolqc),filename = "poolqc.png")
+rm(list = c("poolqc_outlier", "poolqc_outlier_after", "figure", "poolqc"))
 
 # 1st approach to MasVnrType and MasVnrArea
 # Replacing MasVnrType NA's
@@ -166,14 +197,29 @@ combined$MasVnrType <- fct_explicit_na(combined$MasVnrType, na_level = "None")
 # MasVnrArea - 46 NA's (no masonry area)  
 combined$MasVnrArea[is.na(combined$MasVnrArea)] = 0
 # There's many instances, where MasVnrType is None, but it has a MasVnrArea, so we set these MasVnrType = "Other"
-ggplot(data = combined, aes(x = MasVnrType, y = MasVnrArea)) +  geom_boxplot() 
+# Visual representation of outliers
+masvnrtype_outlier <- ggplot(data = combined, aes(x = MasVnrType, y = MasVnrArea)) +  geom_boxplot(aes(fill = MasVnrType), show.legend = FALSE) +  scale_fill_brewer(palette="YlOrRd")
+# Outputting the 16 outlier cases
 combined[(combined$MasVnrArea > 0) &(combined$MasVnrType =="None"), c("MasVnrType","MasVnrArea")]
 # The ones where MasVnrArea = 1, must be an error, so we set it equal to 0.
 combined$MasVnrArea[(combined$MasVnrArea == 1)] = 0
 # Add a level to MasVnrType: "Other"
 levels(combined$MasVnrType) = c(levels(combined$MasVnrType),"Other")
 combined$MasVnrType[combined$MasVnrType=="None" & combined$MasVnrArea!=0] = "Other"
-ggplot(data = combined, aes(x = MasVnrType, y = MasVnrArea)) +  geom_boxplot() 
+# Visually see impact of removing outlier 
+masvnrtype_outlier_after <- ggplot(data = combined, aes(x = MasVnrType, y = MasVnrArea)) +  geom_boxplot(aes(fill = MasVnrType), show.legend = FALSE) + scale_fill_brewer(palette="YlOrRd")
+# Creating Figure 4
+figure <- ggarrange(masvnrtype_outlier, masvnrtype_outlier_after, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+masvnrtype <- annotate_figure(figure,
+                top = text_grob("Comparison of Masonry Veneer Area Across Type", face = "bold", size = 12, hjust = 0.5),
+                bottom = text_grob("Figure 4A: Identifying the outliers in MasVnrType. The 16 outlier observations are labeled in the ‘None’ \n level of MasVnrType. This indicates, they have no Masonry Veneer, but they have a corresponding \n Masonry Veneer Area. We reclassify them as “Other”. \n \n Figure 4B: Relabeling our outliers positively impacted our predictor MasVnrType. The classification of a \n lack of Masonry Veneer is consistent between MasVnrArea and MasVnrType.",hjust = 0, x = 0, face = "italic", size = 10),
+                fig.lab = "Figure 4", fig.lab.face = "bold",
+                )
+masvnrtype
+ggexport(plotlist = list(masvnrtype),filename = "masvnrtype.png")
+rm(list = c("masvnrtype_outlier", "masvnrtype_outlier_after", "figure", "masvnrtype"))
 
 # NUMERICAL
 # For Basement, we see that the same 2 observations are missing, and see that their BmtQual = None, which means that they have no basement, so we set the following equal to 0
@@ -225,27 +271,51 @@ combined$LotFrontage[is.na(combined$LotFrontage)] = median(combined$LotFrontage,
 
 # Values with < 5 missing values, but the distribution of categories was heavily skewed, we filled it in with the mode
 # Electrical - 2 NA's
-ggplot(combined, aes(Electrical)) + geom_bar()
+  # Visual
+electrical <- ggplot(data = combined, aes(Electrical)) +  geom_bar(aes(fill = Electrical), show.legend = FALSE)  + scale_fill_brewer(palette="Blues")
 combined$Electrical[is.na(combined$Electrical)] = "SBrkr"
+
 # KitchenQual - 2 NA's
-ggplot(combined, aes(KitchenQual)) + geom_bar()
+  # Visual
+kitchenqual <- ggplot(data = combined, aes(KitchenQual)) +  geom_bar(aes(fill = KitchenQual), show.legend = FALSE) + scale_fill_brewer(palette="BrBG")
 combined$KitchenQual[is.na(combined$KitchenQual)] = "TA"
+
 # Functional - 3 NA's
-ggplot(combined, aes(Functional)) + geom_bar()
+  # Visual
+functional <- ggplot(data = combined, aes(Functional)) +  geom_bar(aes(fill = Functional), show.legend = FALSE) + scale_fill_brewer(palette="PiYG")
 combined$Functional[is.na(combined$Functional)] = "Typ"
+
 # Exterior 1st - 1 NA
-ggplot(combined, aes(Exterior1st)) + geom_bar()
+  # Visual
+exterior1st <- ggplot(data = combined, aes(Exterior1st)) +  geom_bar(aes(fill = Exterior1st), show.legend = FALSE) + scale_fill_brewer(palette="BrBG") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 combined$Exterior1st[is.na(combined$Exterior1st)] = "VinylSd"
+
 # Exterior 2nd - 1 NA
-ggplot(combined, aes(Exterior2nd)) + geom_bar()
+  # Visual
+exterior2nd <- ggplot(data = combined, aes(Exterior2nd)) +  geom_bar(aes(fill = Exterior2nd), show.legend = FALSE)  + scale_fill_brewer(palette="YlGn") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 combined$Exterior2nd[is.na(combined$Exterior2nd)] = "VinylSd"
 # Sale Type - 1 NA
+ # Visual
+saletype<- ggplot(data = combined, aes(SaleType)) +  geom_bar(aes(fill = SaleType), show.legend = FALSE)  +  scale_fill_brewer(palette="Spectral") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 # Since SaleType is correlated w/ SaleCondition, we see Normal is most associated with "WD"
 combined[is.na(combined$SaleType),c('SaleType', 'SaleCondition')]
 table(combined$SaleCondition, combined$SaleType) # table showing Normal & "WD"
 ggplot(combined, aes(SaleCondition)) + geom_bar(aes(fill = SaleType)) # graph showing Normal & "WD"
 # Replace all NA sale type w/ "WD"
 combined$SaleType[is.na(combined$SaleType)] = 'WD'
+
+
+# Figure 5
+figure <- ggarrange(electrical, kitchenqual, functional, exterior1st, exterior2nd, saletype,
+          labels = c("A", "B", "C", "D", "E","F"),
+          ncol = 2, nrow = 3)
+fig5 <- annotate_figure(figure,
+                top = text_grob("Exploratory Analysis for Imputation", face = "bold", size = 12, hjust = 0.5),
+                bottom = text_grob(" All figures: There is a clear factor level where the majority of the observations lie. We assign the missing \n values for each predictor to the level with the highest frequency.",hjust = 0, x = 0, face = "italic", size = 10),
+                fig.lab = "Figure 5", fig.lab.face = "bold",
+                )
+ggexport(plotlist = list(fig5),filename = "figure5.png")
+rm(list = c("electrical", "kitchenqual", "functional", "exterior1st", "exterior2nd","saletype", "figure", "fig5"))
 
 ##################################################
 # Missing values >= 5
@@ -307,6 +377,8 @@ combined$LotShape <- as.factor(combined$LotShape)
 combined2 <- combined
 combined <- cbind(combined2[,-73], affordabilitty = combined2$affordabilitty)
 rm(combined2)
+
+
 ```
 
 Correlation between numeric predictors
@@ -318,7 +390,6 @@ combined.factors =select_if(combined, is.factor)
 # Correlation between our numeric predictors
 library(corrplot)
 library(reshape2)
-library(ggpubr)
 # Get upper triangle of the correlation matrix
   get_upper_tri <- function(cormat){
     cormat[lower.tri(cormat)]<- NA
