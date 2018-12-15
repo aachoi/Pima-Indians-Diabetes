@@ -432,20 +432,27 @@ training1 = training1[complete.cases(training1),]
 Splitting the training to 90% and 10%
 ```{r}
 set.seed(1234)
-traini = sample(1:nrow(training1),nrow(training1*0.9),replace=FALSE)
+traini = sample(nrow(training1),nrow(training1)*0.9,replace=FALSE)
 train_train = training1[traini,]
 train_test = training1[-traini,]
 ```
 
 Logistic Model With all predictors included using Cleaned Data
 ```{r}
-m2 = glm(affordabilitty~.,family=binomial(),data=btrain)
+log.mod.full <- glm(affordabilitty~.,family=binomial(),data=train_train)
+summary(log.mod.full)
 
-predictprobs = predict(m2,btest, type='response')
+predictprobs = predict(log.mod.full,train_test, type='response')
 predictlogit = rep('Affordable',length(predictprobs))
 predictlogit[predictprobs>0.5] = 'Unaffordable'
-table(predictlogit,btest$affordabilitty)
-mean(predictlogit==btest$affordabilitty)
+table(predictlogit,train_test$affordabilitty)
+mean(predictlogit==train_test$affordabilitty) # 94% Accuracy
+
+# We want to keep a record of our final predictions
+predictprobs = predict(log.mod.full,testing1, type='response')
+predictlogit = rep('Affordable',length(predictprobs))
+predictlogit[predictprobs>0.5] = 'Unaffordable'
+final.prediction <- data.frame('Logistic Model Full' = predictlogit)
 ```
 
 
