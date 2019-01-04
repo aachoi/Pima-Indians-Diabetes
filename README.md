@@ -1,4 +1,5 @@
 # Predicting Affordabilitty of Houses in Ames, Iowa
+Team Members: Annie Choi and Justin Kim
 ## Abstract
 The purpose of this project was to utilize advanced classification techniques like
 logistic regression, bagging, and random forest in order to build a model to predict the
