@@ -83,6 +83,8 @@ other garage features for this observation indicated that a garage does exist on
 property, we simply set the _GarageYrBlt_ value equivalent to the year the home was built.
 (Figure 1B)
 
+![alt text](https://github.com/aachoi/predicting-affordability-of-houses-in-ames/blob/master/figures/garageyrblt.png)
+
 According to the data description, if _PoolQC_ has a missing value, then it is equivalent to
 having no pool. We expected all properties with missing values for _PoolQC_ would have 0 as
 their _PoolArea_. However, upon further inspection, we found that there were 6 cases where
@@ -92,6 +94,9 @@ Based on the observations’ proximity to the median for the corresponding class
 assigned the missing observations a _PoolQC_. After dealing with the 6 outlier cases, the
 remaining properties with missing data for _PoolQC_ had a corresponding _PoolArea_ equal to
 0. We promptly relabeled these observations’ _PoolQC_ value to “None”. (Figure 2B)
+
+![alt text](https://github.com/aachoi/predicting-affordability-of-houses-in-ames/blob/master/figures/poolqc.png)
+
 For _MasVnrType_, there is already a designated “None” level for the factor. For any
 missing values, we designated it to “None”. Similarly for any missing values for
 _MasVnrArea_, we set it equal to 0 in order to signify that it does not have a masonry veneer.
@@ -102,6 +107,8 @@ was equivalent to 1. Since we know that it is impossible to have a masonry venee
 square foot, we set them to 0. For the remaining 14 properties that had a _MasVnrArea_, but
 was classified as having no masonry veneer, we relabelled them to the “Other” category for
 the _MasVnrType_. (Figure 3B)
+
+![alt text](https://github.com/aachoi/predicting-affordability-of-houses-in-ames/blob/master/figures/masvnrtype.png)
 
 It was easier to identify the categorical predictors that were improperly labeled
 because it was explicitly stated on the data description sheet. For the numerical predictors,
@@ -124,7 +131,11 @@ numerical variable _LotFrontage_, our initial approach was to impute with the me
 of the predictor. For the categorical variables, our initial approach was to randomly sample
 from the levels of the factor to fill the missing values. However, as we were conducting our
 exploratory analysis, we noticed that the majority of our observations fell into one level of
-that factor. (Figure 4) Therefore, for predictors like _Electrical_, _KitchenQual_, _Functional_,
+that factor. (Figure 4) 
+
+![alt text](https://github.com/aachoi/predicting-affordability-of-houses-in-ames/blob/master/figures/figure4.png)
+
+Therefore, for predictors like _Electrical_, _KitchenQual_, _Functional_,
 _Exterior1st_, _Exterior2nd_, and _SaleType_ that had less than 5 observations missing, we simply
 assigned the missing value to the mode of that predictor. Our imputation process to replace
 missing observations with the mode introduces bias into our data. For predictors with 5 or
@@ -157,15 +168,23 @@ vs. IR (irregular).
 
 After cleaning our data, we perform some exploratory analysis. From our correlation
 matrix, we see three distinct highly correlated pairs of variable, which are _GarageCars_ and
-_GarageArea_, _GrLivArea_ and _TotRmsAbv_, _X1stFlrSF_ and _TotalBsmtSF_. (Figure 5) Based on the
-density plots, we select the predictors (_GarageArea_, _GrLivArea_, and _X1stFlrSF_) that have the
+_GarageArea_, _GrLivArea_ and _TotRmsAbv_, _X1stFlrSF_ and _TotalBsmtSF_. (Figure 5) 
+
+![alt text](https://github.com/aachoi/predicting-affordability-of-houses-in-ames/blob/master/figures/corrplot.png)
+
+Based on the density plots, we select the predictors (_GarageArea_, _GrLivArea_, and _X1stFlrSF_) that have the
 least amount of overlap in classes for _affordabilitty_. We drop these highly correlated
-variables, as well as redundant variables like _Exterior2nd_ from our dataset. To further
-minimize the dimensionality of our data, we conduct a principal component analysis on the
+variables, as well as redundant variables like _Exterior2nd_ from our dataset. (Figure 6) 
+
+![alt text](https://github.com/aachoi/predicting-affordability-of-houses-in-ames/blob/master/figures/density_highly_correlated.jpeg)
+
+To further minimize the dimensionality of our data, we conduct a principal component analysis on the
 numeric variables. In order to retain at least 95% of the original data, we need to include
 23 principal components into our model. (Figure 7) We then combine our principal
 components dataframe with our categorical variables and then proceed to split our data
 into the original training and testing data.
+
+![alt text](https://github.com/aachoi/predicting-affordability-of-houses-in-ames/blob/master/figures/scree.plot.jpeg)
 ### Modeling
 We further segment our training data into a training (90%) and validation (10%) set
 so that we can estimate our misclassification rate for different models. Our first attempt
@@ -176,6 +195,7 @@ accuracy of 96.2%, which was higher than the logistic model. In addition, we use
 validation to find the best tree to use for pruning. Although we pruned the tree, we ended
 up with the same results. We knew that using trees resulted in a lot of correlated branches,
 so our next approach was bagging.
+
 Setting mtry to 64 and ntree=900 based on the model plot (Figure 8) lead us to a
 accuracy of 97%. Based on this bagging model, we created a Variance Importance Plot
 (figure 10) that lead us to create random forest models that consisted of the ten most
