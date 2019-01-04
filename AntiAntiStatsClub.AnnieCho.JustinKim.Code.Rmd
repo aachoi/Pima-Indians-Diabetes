@@ -1,8 +1,6 @@
 ---
-title: "Stats101C Project"
-author: "Annie Choi and Justin Kim"
-date: "12/13/2018"
-output: pdf_document
+title: "AntiAntiStatsClub.AnnieCho.JustinKim.Code"
+output: html_document
 ---
 
 # Initial Attempt
@@ -33,11 +31,478 @@ predictlogit = rep('1',length(predictprobs))
 predictlogit[predictprobs>0.5] = '0'
 confmatrix <- table(predictlogit,as.factor(ptest$affordabilitty))
 confmatrix
-sum(diag(confmatrix)/ sum(confmatrix)) # Accuracy
-rm(list = ls())
+ptest1 = as.factor(ptest$affordabilitty)
+ptest1 = revalue(ptest1,c("Unaffordable"="0","Affordable"="1"))
+mean(predictlogit==ptest1) #accuracy
 ```
 
-# Data Cleaning
+
+# First Attempt at Data Cleaning
+```{r}
+library(reshape2)
+library(ggplot2)
+library(purrr)
+library(tidyr)
+library(corrplot)
+library(plyr)
+library(forcats) 
+library(randomForest)
+library(readr)
+library(dplyr)
+
+
+# Import training and testing data
+training <- read.csv(file = "HTrainLast.csv", stringsAsFactors = TRUE)
+real_testing <- read.csv(file = "HTestLastNoY.csv", stringsAsFactors = TRUE)
+train1 = read.csv(file = "HTrainLast.csv", stringsAsFactors = TRUE)
+real_testing$affordabilitty = rep(NA,nrow(real_testing))
+train1 =  rbind(train1,real_testing)
+
+# Combine training & testing
+training = rbind(training,real_testing)
+
+# Get rid of the observation column 
+training = training[, -1]
+
+# Manually changing predictors to factors based on Data Description
+training$MSSubClass <- as.factor(training$MSSubClass)
+
+# Changing all the NA's into "None" (another factor level)
+#  Alley - it has 3273 NA's (no alley access)
+training$Alley <- fct_explicit_na(training$Alley, na_level = "None")
+# FireplaceQu = 1707 NA's (no fireplace)
+training$FireplaceQu <- fct_explicit_na(training$FireplaceQu, na_level = "None")
+# GarageType = 162 NA's (no garage)
+training$GarageType <- fct_explicit_na(training$GarageType, na_level = "None")
+# GarageFinish = 163 NA's (no garage)
+training$GarageFinish <- fct_explicit_na(training$GarageFinish, na_level = "None")
+# GarageQual = 163 NA's (no garage)                                           ~~~~ correlation w/ garage cond
+training$Alley <- fct_explicit_na(training$Alley, na_level = "None")
+# GarageCond = 163 NA's (no garage)
+training$GarageCond <- fct_explicit_na(training$GarageCond, na_level = "None")
+
+# PoolQC = 3490 NA's (no pool)
+# PoolQC = 3490 NA's (no pool)
+# Pools w/ missing PoolQC, even though they have a pool
+training[(training$PoolArea > 0) & is.na(training$PoolQC),c('PoolQC','PoolArea')]
+# Calculate the mean pool size for each level of pool condition
+training[,c('PoolQC','PoolArea')] %>% group_by(PoolQC) %>%
+  summarise(mean = mean(PoolArea), counts = n()) 
+# Assign these pools a quality based on the mean of that size of a pool 
+training[644,'PoolQC'] = 'Fa' #561
+training[1052,'PoolQC'] = 'Ex' #368
+training[1192,'PoolQC'] = 'Fa' #561
+training[1425,'PoolQC'] = 'Ex' #444
+training[4555,'PoolQC'] = 'Fa' #561
+training[4668,'PoolQC'] = 'Fa' #561
+# Assign the rest of the PoolQC that have a PoolArea=0, to none
+training$PoolQC <- fct_explicit_na(training$PoolQC, na_level = "None")
+
+
+training$Fence <- fct_explicit_na(training$Fence, na_level = "None")
+# BsmtQual
+training$BsmtQual <- fct_explicit_na(training$BsmtQual, na_level = "None")
+# BsmtCond
+training$BsmtCond <- fct_explicit_na(training$BsmtCond, na_level = "None")
+# Bsmt Exposure
+training$BsmtExposure <- fct_explicit_na(training$BsmtExposure, na_level = "None")
+# Bsmt Fintype1
+training$BsmtFinType1 <- fct_explicit_na(training$BsmtFinType1, na_level = "None")
+# Bsmt Fintype2
+training$BsmtFinType2 <- fct_explicit_na(training$BsmtFinType2, na_level = "None")
+
+
+#training$GarageYrBlt = as.numeric(as.character(training$GarageYrBlt))
+#training$GarageYrBlt[training$GarageYrBlt=="2207"] = "None"
+# We can see that GarageType, GarageYrBlt, GarageFinish, GarageCars, GarageArea, GarageQual, GarageCond -> means no garage
+#training[which(is.na(training$GarageYrBlt)),c(58,59,60,61,62,63,64)]
+#training$GarageYrBlt[is.na(training$GarageYrBlt)] = 0
+#training$GarageCars[is.na(training$GarageCars)] = 0
+#training$GarageArea[is.na(training$GarageArea)] = 0
+#training$GarageQual <- fct_explicit_na(training$GarageQual, na_level = "None")
+
+training=training[,-c(9,74,75)] # Get rid of utilities, MiscFeature, MiscVal
+
+# Getting only the data without NA's
+NoNaData = training[,colSums(is.na(training))==0]
+NoNaNumeric = select_if(NoNaData, is.numeric)
+NoNaCat = select_if(NoNaData, is.factor)
+
+# Replacing MSZoning NA's
+MSdata = cbind(MSZoning=training$MSZoning,NoNaData)
+MStrain = MSdata[complete.cases(MSdata),]
+MStest = MSdata[is.na(MSdata),]
+rfMS = randomForest(MSZoning~.,data=MStrain,mtry=54,importance=TRUE)
+pred.MS = predict(rfMS,newdata=MStest)
+training$MSZoning[is.na(training$MSZoning)] = pred.MS
+
+# Replacing LotFrontage NA
+library(gbm)
+Lotdata = cbind(LotFrontage=training$LotFrontage,NoNaData)
+Lottrain = Lotdata[complete.cases(Lotdata),]
+Lottest = Lotdata[is.na(Lotdata),]
+n = nrow(Lottrain)
+traini = sample(1:n,2930,replace=FALSE)
+Lottn = Lottrain[traini,]
+Lottt = Lottrain[-traini,]
+Lotgbm = gbm(LotFrontage~.,data=Lottrain,distribution="gaussian",n.tree=5000,interaction.depth=4)
+pred.Lot = predict(Lotgbm,newdata=Lottest,n.tree=5000)
+training$LotFrontage[is.na(training$LotFrontage)] = pred.Lot
+
+# Replacing Exteriro 1st with sample as its only 1 NA
+training$Exterior1st[is.na(training$Exterior1st)] = sample(levels(training$Exterior1st),sum(is.na(training$Exterior1st),na.rm=TRUE),replace=TRUE)
+
+# Replacing Exterior 2nd with sample as its only 1 NA
+training$Exterior2nd[is.na(training$Exterior2nd)] = sample(levels(training$Exterior2nd),sum(is.na(training$Exterior2nd),na.rm=TRUE),replace=TRUE)
+
+
+# Replacing NA for MasVnrArea and MasVnrType
+training$MasVnrType <- fct_explicit_na(training$MasVnrType, na_level = "None")
+training$MasVnrArea[is.na(training$MasVnrArea)] = 0
+levels(training$MasVnrType) = c(levels(training$MasVnrType),"Other")
+training$MasVnrType[training$MasVnrType=="None" & training$MasVnrArea!=0] = "Other"
+
+
+# Making BsmtFinSF1 NA to 0
+training$BsmtFinSF1[is.na(training$BsmtFinSF1)] = 0
+
+# Making BsmtFinSF2 NA to 0
+training$BsmtFinSF2[is.na(training$BsmtFinSF2)] = 0
+
+# Making BsmtUnfSF NA to 0
+training$BsmtUnfSF[is.na(training$BsmtUnfSF)] = 0
+
+# Making BsmtFinSF2 NA to 0
+training$TotalBsmtSF[is.na(training$TotalBsmtSF)] = 0
+
+# Sampling to fill NA of Electircal
+training$Electrical[is.na(training$Electrical)] = "SBrkr"
+
+# Basement Full Bath
+training[is.na(training$BsmtFullBath),]
+training$BsmtFullBath[is.na(training$BsmtFullBath)] = 0
+
+
+# Basement Half Bath
+training[is.na(training$BsmtHalfBath),]
+training$BsmtHalfBath[is.na(training$BsmtHalfBath)] = 0
+
+# Kitchen Qual
+training[is.na(training$KitchenQual),] 
+training$KitchenQual[is.na(training$KitchenQual)] = "TA"
+
+# Functional
+training[is.na(training$Functional),] 
+training$Functional[is.na(training$Functional)] = "Typ"
+
+# Garage Year Built
+training$GarageYrBlt[is.na(training$GarageYrBlt)] = 2018
+training$GarageYrBlt[training$GarageYrBlt==2018] = training$YearBuilt[training$GarageYrBlt==2018]
+training$GarageYrBlt[training$GarageYrBlt==2207] = training$YearBuilt[training$GarageYrBlt==2207]
+
+# Garage Cars
+training$GarageCars[is.na(training$GarageCars)] = 0
+
+# Garage Area
+training$GarageArea[is.na(training$GarageArea)] = 0
+
+# Garage Qual
+training$GarageQual <- fct_explicit_na(training$GarageQual, na_level = "None")
+
+# Sale Type: the only missing data is normal
+training[is.na(training$SaleType),c('SaleCondition')]
+# Noraml is most associated with "WD"
+table(training$SaleCondition, training$SaleType)
+# Replace all NA sale type w/ "WD"
+training$SaleType[is.na(training$SaleType)] = 'WD'
+
+
+
+# House Age And Yes/No for remodeled
+# Remodeled (Categorical)
+training$Remodeled <- rep("Yes", nrow(training))
+training$Remodeled[which (training$YearRemodAdd - training$YearBuilt==0)]<- "No"
+training$Remodeled <- as.factor(training$Remodeled)
+# House Age
+# age = 2018 - yearbuilt (if not remodeled)
+training$HouseAge[which(training$Remodeled == "No")] <- 2018 - training$YearBuilt[which(training$Remodeled == "No")]
+# age = 2018 - yearRemodeled (if remodeled)
+training$HouseAge[which(training$Remodeled == "Yes")] <- 2018 - training$YearRemodAdd[which(training$Remodeled == "Yes")]
+# Condense levels of LotShape
+training$LotShape <- as.character(training$LotShape)
+training$LotShape[which (training$LotShape!= "Reg")] <- "IR"
+training$LotShape <- as.factor(training$LotShape)
+
+# Taking out BsmtFinSF1 and 2
+training$BsmtTotalFin = training$BsmtFinSF1 + training$BsmtFinSF2
+
+training = training[,colnames(training) != "BsmtFinSF2"]
+training = training[,colnames(training) != "BsmtFinSF1"]
+
+
+# Splitting training by numeric and factors
+training.numeric <- select_if(training, is.numeric)
+full.numeric = select_if(training, is.numeric)
+training.factors <- select_if(training, is.factor)
+full.factors =select_if(training, is.factor) 
+
+
+################################# 
+library(corrplot)
+corr <- round(cor(training.numeric),3)
+corrplot.mixed(corr, lower = "number", upper = "pie")
+# See which predictors have a correlation equal to or higher than 0.7
+corr[which(abs(corr) >=0.7 & abs(corr) !=1 )]
+which(abs(corr) >=0.7 & abs(corr) !=1 )
+temp_ind <- which(abs(corr) >=0.7 & abs(corr) !=1  , arr.ind = TRUE)
+corr_table <- data.frame(predictors = paste(rownames(corr)[temp_ind[,"row"]],  colnames(corr)[temp_ind[,"col"]], sep=', '), values = corr[which(abs(corr) >=0.7 & abs(corr) !=1 )])
+
+training.numeric = training.numeric[,colnames(training.numeric) != "YearBuilt"]
+training.numeric = training.numeric[,colnames(training.numeric) != "YearRemodAdd"]
+training.numeric = training.numeric[,colnames(training.numeric) != "X1stFlrSF"]
+training.numeric = training.numeric[,colnames(training.numeric) != "TotRmsAbvGrd"]
+training.numeric = training.numeric[,colnames(training.numeric) != "GarageCars"]
+# Adding Affordability to Numeric Variables 
+pca = princomp(training.numeric,cor=T)
+
+x = summary(pca)
+pc.comp <- pca$scores
+pcdf = pc.comp[,1:22]
+pcdf = data.frame(pcdf)
+colnames(pcdf) = c(LETTERS[1:22])
+
+training.factors = cbind(training.factors,pcdf)
+training.factors = training.factors[,colnames(training.factors) != "Exterior2nd"]
+
+testing1 = training.factors[3501:5000,]
+training1 = training.factors[1:3500,]
+training1 = training1[complete.cases(training1),]
+```
+
+
+Splitting the training to 90% and 10%
+```{r}
+set.seed(9999999)
+n=dim(training1)[1]
+traini = sample(1:n,n*0.9,replace=FALSE)
+btrain = training1[traini,]
+btest = training1[-traini,]
+```
+
+Logistic Model With all predictors included using Cleaned Data
+```{r}
+m2 = glm(affordabilitty~.,family=binomial(),data=btrain)
+
+
+predictprobs = predict(m2,btest, type='response')
+predictlogit = rep('Affordable',length(predictprobs))
+predictlogit[predictprobs>0.5] = 'Unaffordable'
+table(predictlogit,btest$affordabilitty)
+mean(predictlogit==btest$affordabilitty)
+```
+
+
+Logistic With Backward And Forward Selection
+```{r}
+library(leaps)
+library(MASS)
+library(mixlm)
+library(plyr)
+
+# Using variables that came out important from tree
+FullMod = glm(affordabilitty~.,family=binomial(),data=btrain)
+predictprobs = predict(FullMod,btest, type='response')
+predictlogit = rep('Affordable',length(predictprobs))
+predictlogit[predictprobs>0.5] = 'Unaffordable'
+table(predictlogit,btest$affordabilitty)
+mean(predictlogit==btest$affordabilitty)
+
+# Takes long to run so put the final result as BackSub in the next line
+# backwardsSub = step(FullMod,trace=0) 
+#summary(backwardsSub)
+
+BackSub = glm(affordabilitty ~ MSSubClass + MSZoning + Street + LotShape + 
+    LandContour + LotConfig + LandSlope + Neighborhood + Condition1 + 
+    HouseStyle + RoofStyle + RoofMatl + MasVnrType + BsmtQual + 
+    BsmtCond + BsmtExposure + BsmtFinType1 + HeatingQC + Electrical + 
+    KitchenQual + Functional + FireplaceQu + GarageType + GarageFinish + 
+    PavedDrive + PoolQC + Fence + SaleType + SaleCondition + 
+    Remodeled + A + B + C + D + E + H + I + J + K + L + M + N + 
+    O + P + R + S + U + V,family=binomial(),data=btrain)
+predictprobs = predict(BackSub,btest, type='response')
+predictlogit = rep('Affordable',length(predictprobs))
+predictlogit[predictprobs>0.5] = 'Unaffordable'
+table(predictlogit,btest$affordabilitty)
+mean(predictlogit==btest$affordabilitty)
+
+# Takes logn to run so put the final result as ForSub in the next line
+#nothing = glm(affordabilitty~1,family=binomial(),data=btrain)
+#forwardsSub = step(nothing,scope=list(lower=formula(nothing),upper=formula(FullMod)),direction="forward",trace=0)
+ForSub = glm(affordabilitty ~ A + Neighborhood + KitchenQual + SaleCondition + 
+    S + BsmtExposure + I + MSZoning + SaleType + H + Functional + 
+    E + D + ExterQual + L + ExterCond + P + J + Street + M + 
+    LotShape + T + BsmtQual + C + G + Remodeled + HeatingQC + 
+    GarageType + BsmtCond + Foundation + BsmtFinType1 + R,family=binomial(),data=btrain)
+
+predictprobs = predict(ForSub,btest, type='response')
+predictlogit = rep('Affordable',length(predictprobs))
+predictlogit[predictprobs>0.5] = 'Unaffordable'
+table(predictlogit,btest$affordabilitty)
+mean(predictlogit==btest$affordabilitty)
+```
+
+
+
+Tree and Randomforest
+```{r}
+require(tree)
+library(randomForest)  
+library(e1071)  
+library(caret)  
+library(ggplot2)  
+library(MASS)
+library(ISLR)
+library(rfUtilities)
+
+
+set.seed(9999999)
+n=dim(training1)[1]
+traini = sample(1:n,n*0.9,replace=FALSE)
+btrain = training1[traini,]
+btest = training1[-traini,]
+
+full=tree(affordabilitty~.,mindev=0,minsize=2,data=btrain)
+pred.full=predict(full,newdata=btest,type="class")
+table(pred.full,btest$affordabilitty)
+mean(pred.full==btest$affordabilitty)
+
+# Seeing which tree is best
+cvtree = cv.tree(full,FUN=prune.misclass)
+df = data.frame(size=cvtree$size,dev = cvtree$dev)
+df=df[order(df$dev),]
+df
+pruned = prune.misclass(full,best=83)
+
+#Finding Results of Pruned Tree
+pred.pr = predict(pruned,newdata=btest,type="class")
+table(pred.pr,btest$affordabilitty)
+mean(pred.pr == btest$affordabilitty)
+
+
+# Bagging
+rm1 = randomForest(affordabilitty~.,data=btrain,mtry=64,importance=TRUE,ntree=2000)
+jpeg('baggingmodel.jpg')
+plot(rm1,main="Bagging Model Plot")
+dev.off()
+pred.rm=predict(rm1,data=btrain)
+table(btrain$affordabilitty,pred.rm)
+mean(btrain$affordabilitty==pred.rm)
+
+pred.rm=predict(rm1,newdata=btest)
+table(btest$affordabilitty,pred.rm)
+mean(btest$affordabilitty==pred.rm)
+
+df = importance(rm1)
+df = as.data.frame(df)
+df$rname = rownames(df)
+df = arrange(df,desc(MeanDecreaseAccuracy))
+df = df[,c(5,1,2,3,4)]
+df1 = arrange(df,desc(MeanDecreaseGini))
+
+# df of Mean Decrease Accuracy Best
+MostImportantVar = c(df[1:9,1],df1[1:9,1])
+x = which((table(MostImportantVar)==2)==TRUE)
+x1 = names(x)
+x1
+
+m2 = randomForest(affordabilitty~A+C+D+E+I+L+Neighborhood+P+S+T,data=btrain,mtry=sqrt(10),importance=TRUE,ntree=1300)
+plot(m2)
+
+m3 = randomForest(affordabilitty~A+C+D+E+Exterior1st+H+I+L+Neighborhood+P+S+T+U,data=btrain,mtry=sqrt(13),importance=TRUE,ntree=2500)
+plot(m3)
+
+m4 = randomForest(affordabilitty~A+C+D+E+I+L+Neighborhood,data=btrain,mtry=sqrt(7),importance=TRUE,ntree=2200)
+plot(m4)
+
+
+
+#Predicting Using M2
+pred.rm = predict(m2,data=btrain)
+table(btrain$affordabilitty,pred.rm)
+mean(btrain$affordabilitty==pred.rm)
+
+pred.rm = predict(m2,newdata=btest)
+table(btest$affordabilitty,pred.rm)
+mean(btest$affordabilitty==pred.rm)
+
+#Predicting Using M3
+pred.rm.t1 = predict(m3,date=btrain)
+mean(btrain$affordabilitty==pred.rm.t1)
+
+pred.rm.t = predict(m3,newdata=btest)
+table(btest$affordabilitty,pred.rm.t)
+mean(btest$affordabilitty==pred.rm.t)
+
+#Predicting Using M4
+pred.rm.t1 = predict(m4,date=btrain)
+mean(btrain$affordabilitty==pred.rm.t1)
+
+pred.rm.t = predict(m4,newdata=btest)
+table(btest$affordabilitty,pred.rm.t)
+mean(btest$affordabilitty==pred.rm.t)
+
+dfMultiple = data.frame(A=rep(NA,nrow(btest)), B = rep(NA,nrow(btest)), C = rep(NA,nrow(btest)), D = rep(NA,nrow(btest)),E = rep(NA,nrow(btest)), F= rep(NA,nrow(btest)), G = rep(NA,nrow(btest)), H = rep(NA,nrow(btest)), I=rep(NA,nrow(btest)),J=rep(NA,nrow(btest)) )
+
+for(i in 1:10){
+  m2 = randomForest(affordabilitty~A+C+D+E+I+L+Neighborhood+P+S+T,data=btrain,mtry=sqrt(i),importance=TRUE,ntree=1300)
+  dfMultiple[,i] = predict(m2,newdata=btest)
+  dfMultiple[,i] = as.factor(dfMultiple[,i])
+  dfMultiple[,i] = revalue(dfMultiple[,i],c("Unaffordable"="0","Affordable"="1"))
+  dfMultiple[,i] = as.numeric(as.character(dfMultiple[,i]))
+}
+
+
+for(i in 1:nrow(dfMultiple)){
+  dfMultiple$Best[i] = names(sort(table(as.numeric(dfMultiple[i,1:10])),decreasing=TRUE))[1]
+}
+
+dfMultiple$Best = as.factor(dfMultiple$Best)
+dfMultiple$Best = revalue(dfMultiple$Best,c("0"="Unaffordable","1"="Affordable"))
+
+table(btest$affordabilitty,dfMultiple$Best)
+mean(btest$affordabilitty==dfMultiple$Best)
+
+```
+
+
+TESTING
+```{r}
+#Predicting Using M2
+m2 = randomForest(affordabilitty~A+C+D+E+I+L+Neighborhood+P+S+T,data=training1,mtry=sqrt(10),importance=TRUE,ntree=1100)
+
+dfMultiple = data.frame(A=rep(NA,nrow(testing1)), B = rep(NA,nrow(testing1)), C = rep(NA,nrow(testing1)), D = rep(NA,nrow(testing1)),E = rep(NA,nrow(testing1)), F= rep(NA,nrow(testing1)), G = rep(NA,nrow(testing1)), H = rep(NA,nrow(testing1)), I=rep(NA,nrow(testing1)),J=rep(NA,nrow(testing1)) )
+
+
+for(i in 1:10){
+  m2 = randomForest(affordabilitty~A+C+D+E+I+L+Neighborhood+P+S+T,data=training1,mtry=sqrt(i),importance=TRUE,ntree=1100)
+  dfMultiple[,i] = predict(m2,newdata=testing1)
+  dfMultiple[,i] = as.factor(dfMultiple[,i])
+  dfMultiple[,i] = revalue(dfMultiple[,i],c("Unaffordable"="0","Affordable"="1"))
+  dfMultiple[,i] = as.numeric(as.character(dfMultiple[,i]))
+}
+
+for(i in 1:nrow(dfMultiple)){
+  dfMultiple$Best[i] = names(sort(table(as.numeric(dfMultiple[i,1:10])),decreasing=TRUE))[1]
+}
+
+dfMultiple$Best = as.factor(dfMultiple$Best)
+dfMultiple$Best = revalue(dfMultiple$Best,c("0"="Unaffordable","1"="Affordable")) # Prediction for actual testing data using training dataset
+```
+
+
+
+
+# Updated Data Cleaning and Methods Based on Updated Data Cleaning
 ```{r}
 library(reshape2)
 library(ggplot2)
@@ -157,7 +622,7 @@ figure <- ggarrange(poolqc_outlier, poolqc_outlier_after,
 poolqc<- annotate_figure(figure,
                 top = text_grob("Comparison of Pool Area Across Pool Quality", face = "bold", size = 12, hjust = 0.5),
                 bottom = text_grob("Figure 2A: Identifying the outliers in PoolQC. The 6 outlier observations have no pool, but 3 unique Pool \n Area values. \n \n Figure 2B: Relabeling our outliers positively impacted our predictor PoolQC.",hjust = 0, x = 0, face = "italic", size = 10),
-                fig.lab = "Figure 2", fig.lab.face = "bold",
+                fig.lab = "Figure 2", fig.lab.face = "bold"
                 )
 poolqc
 ggexport(plotlist = list(poolqc),filename = "poolqc.png")
@@ -215,7 +680,7 @@ figure <- ggarrange(masvnrtype_outlier, masvnrtype_outlier_after,
 masvnrtype <- annotate_figure(figure,
                 top = text_grob("Comparison of Masonry Veneer Area Across Type", face = "bold", size = 12, hjust = 0.5),
                 bottom = text_grob("Figure 3A: Identifying the outliers in MasVnrType. The 16 outlier observations are labeled in the ‘None’ \n level of MasVnrType. This indicates, they have no Masonry Veneer, but they have a corresponding \n Masonry Veneer Area. We reclassify them as “Other”. \n \n Figure 3B: Relabeling our outliers positively impacted our predictor MasVnrType. The classification of a \n lack of Masonry Veneer is consistent between MasVnrArea and MasVnrType.",hjust = 0, x = 0, face = "italic", size = 10),
-                fig.lab = "Figure 3", fig.lab.face = "bold",
+                fig.lab = "Figure 3", fig.lab.face = "bold"
                 )
 masvnrtype
 ggexport(plotlist = list(masvnrtype),filename = "masvnrtype.png")
@@ -300,6 +765,7 @@ saletype<- ggplot(data = combined, aes(SaleType)) +  geom_bar(aes(fill = SaleTyp
 # Since SaleType is correlated w/ SaleCondition, we see Normal is most associated with "WD"
 combined[is.na(combined$SaleType),c('SaleType', 'SaleCondition')]
 table(combined$SaleCondition, combined$SaleType) # table showing Normal & "WD"
+ggplot(combined, aes(SaleCondition)) + geom_bar(aes(fill = SaleType)) # graph showing Normal & "WD"
 # Replace all NA sale type w/ "WD"
 combined$SaleType[is.na(combined$SaleType)] = 'WD'
 
@@ -311,11 +777,12 @@ figure <- ggarrange(electrical, kitchenqual, functional, exterior1st, exterior2n
 fig4 <- annotate_figure(figure,
                 top = text_grob("Exploratory Analysis for Imputation", face = "bold", size = 12, hjust = 0.5),
                 bottom = text_grob(" All figures: There is a clear factor level where the majority of the observations lie. We assign the missing \n values for each predictor to the level with the highest frequency.",hjust = 0, x = 0, face = "italic", size = 10),
-                fig.lab = "Figure 4", fig.lab.face = "bold",
+                fig.lab = "Figure 4", fig.lab.face = "bold"
                 )
 ggexport(plotlist = list(fig4),filename = "figure4.png")
 rm(list = c("electrical", "kitchenqual", "functional", "exterior1st", "exterior2nd","saletype", "figure", "fig4"))
 
+##################################################
 # Missing values >= 5
 # Prediction Model
 # Getting the data without NA's
@@ -327,7 +794,7 @@ NoNaCat = select_if(NoNaData, is.factor) # categorical
 MSdata = cbind(MSZoning=combined$MSZoning,NoNaData)
 MStrain = MSdata[complete.cases(MSdata),]
 MStest = MSdata[is.na(MSdata),]
-rfMS = randomForest(MSZoning~.,data=MStrain,mtry=sqrt(ncol(MStrain)),importance=TRUE)
+rfMS = randomForest(MSZoning~.,data=MStrain,mtry=sqrt(74),importance=TRUE)
 pred.MS = predict(rfMS,newdata=MStest)
 combined$MSZoning[is.na(combined$MSZoning)] = pred.MS
 
@@ -337,15 +804,13 @@ Lotdata = cbind(LotFrontage=combined$LotFrontage,NoNaData)
 Lottrain = Lotdata[complete.cases(Lotdata),]
 Lottest = Lotdata[is.na(Lotdata),]
 n = nrow(Lottrain)
-set.seed(12345)
 traini = sample(1:n,2930,replace=FALSE)
 Lottn = Lottrain[traini,]
 Lottt = Lottrain[-traini,]
 Lotgbm = gbm(LotFrontage~.,data=Lottrain,distribution="gaussian",n.tree=500,interaction.depth=4)
 pred.Lot = predict(Lotgbm,newdata=Lottest,n.tree=500)
 combined$LotFrontage[is.na(combined$LotFrontage)] = pred.Lot
-
-rm("NoNaData", "NoNaNumeric", "NoNaCat", "MSdata", "MStrain", "MStest", "rfMS", "pred.MS", "Lotdata", "Lottrain", "Lottest", "n", "traini", "Lottn", "Lottt", "Lotgbm", "pred.Lot")
+##################################################
 
 ###### Feature Engineering
 # House Age And Yes/No for remodeled
@@ -492,6 +957,7 @@ combined.numeric = combined.numeric[,colnames(combined.numeric) != "X1stFlrSF"]
 combined.numeric = combined.numeric[,colnames(combined.numeric) != "TotRmsAbvGrd"]
 ```
 
+
 PCA on the numeric variables
 ```{r}
 library(factoextra)
@@ -505,11 +971,12 @@ scree.plot <- fviz_eig(pca, addlabels = TRUE, ylim = c(0,30), main = "" ) # to c
 scree.plot
 # Print scree plot
 scree.plot_annotated<- annotate_figure(scree.plot,
-                top = text_grob("PCA Scree Plot", face = "bold", size = 17, hjust = 0.5),
-                fig.lab = "Figure 7", fig.lab.face = "bold", fig.lab.size = 13,
-                bottom = text_grob("  This illustrates what percentage of the variation in the data is explained by each principal component. As we expect, the first dimension provides \n  the highest discrimination power between classes.",hjust = 0, x = 0, face = "italic", size = 12),
+                top = text_grob("PCA Scree Plot", face = "bold", size = 12, hjust = 0.5),
+                fig.lab = "Figure 7", fig.lab.face = "bold"
                 )
-ggexport(plotlist = list(scree.plot_annotated), width = 800,filename = "scree.plot.jpeg")
+ggexport(plotlist = list(scree.plot_annotated), width = 1000,filename = "scree.plot.jpeg")
+
+
 
 # Make our eig value table pretty
 customBlack = "#000"
@@ -532,26 +999,26 @@ eig.table <- formattable(eig.val, align = c("l", "c","c","r"),
                  `Eigenvalue` = eigenvalue_formatter,
                  `Cumulative Variance %` = variance_formatter))
 eig.table
+ggexport(plotlist = list(eig.table),filename = "eigtable.png")
 
-# PCA
 x = summary(pca)
 pc.comp <- pca$scores
 pcdf = pc.comp[,1:23]
 pcdf = data.frame(pcdf)
+colnames(pcdf) = LETTERS[1:23]
 
 # Our final dataframe after PCA
 combined_pca = cbind(combined.factors[,-44],pcdf, affordabilitty = combined.factors$affordabilitty)
 
-rm(list = c("pca", "eig.val", "scree.plot", "scree.plot_annotated", "customBlack", "customGreen", "customRed", "pc.comp", "pcdf"))
-
-# Drop Exterior2nd b/c redundant with Exterior1st
-combined_pca = combined_pca[,colnames(combined_pca) != "Exterior2nd"]
+# Why did we drop exterior2nd
+# combined_pca = training.factors[,colnames(training.factors) != "Exterior2nd"]
 
 # Split our PCA combined data into the original testing and training set
 testing1 = combined_pca[3501:5000,]
 training1 = combined_pca[1:3500,]
 training1 = training1[complete.cases(training1),]
 ```
+
 
 Splitting the training to 90% and 10%
 ```{r}
@@ -561,140 +1028,18 @@ train_train = training1[traini,]
 train_test = training1[-traini,]
 ```
 
+############
+
 Logistic Model With all predictors included using Cleaned Data
 ```{r}
-log.mod.full <- glm(affordabilitty ~. ,family=binomial(),data=train_train)
-summary(log.mod.full)
+m2 = glm(affordabilitty~.,family=binomial(),data=train_train)
 
-predictprobs = predict(log.mod.full,train_test, type='response')
+
+predictprobs = predict(m2,train_test, type='response')
 predictlogit = rep('Affordable',length(predictprobs))
 predictlogit[predictprobs>0.5] = 'Unaffordable'
 table(predictlogit,train_test$affordabilitty)
-mean(predictlogit==train_test$affordabilitty) # 93.1 % Accuracy
-# Dataframe to keep count of our train_test responses
-train.test.prediction <- data.frame('Logistic Model Full' = predictlogit)
-
-
-
-```
-
-
-
-QDA and LDA #Does not work for some reason
-```{r}
-library(MASS)
-plda = lda(train_train[,-66], grouping = train_train[,66])
-predictprobs = predict(plda,train_test[,-66])
-table(predictprobs$class,train_test$affordabilitty)
-
-plda = lda(affordabilitty~.,data=btrain)
-predictprobs = predict(plda,train_test)$class
-table(predictprobs$class,train_test$affordabilitty)
-
-
-# WITH TEST SET
-
-#plda = lda(affordabilitty~.,data=btrain)
-
-#predictprobs = predict(plda,ptdata)
-#predictprobs$class
-
-#Attempt3Data = 
-#revalue(predictprobs$class,c("1"="Affordable","0"="Unaffordable"))
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-```{r}
-# How do we deal with Basement?
-#combined[(is.na(combined$BsmtQual)) & !is.na(combined$BsmtCond),c('BsmtQual','BsmtCond')]
-
-
-ggplot(combined, aes(Electrical)) + geom_bar()
-#exploratory analysis
-
-
-head(combined[,c('Exterior1st', 'Exterior2nd')])
-levels(combined$Exterior1st)
-levels(combined$Exterior2nd)
-levels(combined$Exterior2nd)[6] <- "CemntBd"
-levels(combined$Exterior1st) = c(levels(combined$Exterior1st),"Other")
-levels(combined$Exterior1st)
-combined[which(as.character(combined$Exterior1st) != as.character(combined$Exterior2nd)), c('Exterior1st', 'Exterior2nd')]
-
-
-# We want to keep a record of our final predictions
-predictprobs = predict(log.mod.full,testing1, type='response')
-predictlogit = rep('Affordable',length(predictprobs))
-predictlogit[predictprobs>0.5] = 'Unaffordable'
-testing.prediction <- data.frame('Logistic Model Full' = predictlogit)
-
-```
-
-
-
-
-
-
-
-
-
-Logistic With Backward And Forward Selection
-```{r}
-library(leaps)
-library(MASS)
-library(mixlm)
-library(plyr)
-
-# Using variables that came out important from tree
-FullMod = glm(affordabilitty~A+AA+B+BB+BsmtFinType1+C+Condition1+D+E+Exterior1st+Exterior2nd+F+G+H+I+J+K+KitchenQual+L+M+MSSubClass+N+Neighborhood+O+P+Q+R+S+SaleCondition+SaleType+T+U+V+W+X+Y+Z,family=binomial(),data=btrain)
-predictprobs = predict(FullMod,btest, type='response')
-predictlogit = rep('Affordable',length(predictprobs))
-predictlogit[predictprobs>0.5] = 'Unaffordable'
-table(predictlogit,btest$affordabilitty)
-mean(predictlogit==btest$affordabilitty)
-
-
-backwardsSub = step(FullMod,trace=0) 
-summary(backwardsSub)
-
-BackSub = glm(affordabilitty ~ A + AA + B + BB + BsmtFinType1 + C + D + E + 
-    H + I + K + KitchenQual + L + M + N + Neighborhood + O + 
-    Q + S + SaleCondition + SaleType + T + V + W + Y + Z,family=binomial(),data=btrain)
-predictprobs = predict(backwardsSub,btest, type='response')
-predictlogit = rep('Affordable',length(predictprobs))
-predictlogit[predictprobs>0.5] = 'Unaffordable'
-table(predictlogit,btest$affordabilitty)
-mean(predictlogit==btest$affordabilitty)
-
-
-nothing = glm(affordabilitty~1,family=binomial(),data=btrain)
-forwardsSub = step(nothing,scope=list(lower=formula(nothing),upper=formula(FullMod)),direction="forward",trace=0)
-
-ForSub = glm(affordabilitty ~ A + Neighborhood + W + KitchenQual + S + BsmtFinType1 + 
-    E + I + SaleCondition + L + Y + Q + M + N + H + SaleType + 
-    D + T + BB + V + O + B + C,family=binomial(),data=btrain)
-
-predictprobs = predict(forwardsSub,btest, type='response')
-predictlogit = rep('Affordable',length(predictprobs))
-predictlogit[predictprobs>0.5] = 'Unaffordable'
-table(predictlogit,btest$affordabilitty)
-mean(predictlogit==btest$affordabilitty)
+mean(predictlogit==train_test$affordabilitty)
 ```
 
 
@@ -711,39 +1056,33 @@ library(ISLR)
 library(rfUtilities)
 
 
-set.seed(9999999)
-traini = sample(1:nrow(training1),nrow(training1)*0.9,replace=FALSE)
-train_train = training1[traini,]
-train_test = training1[-traini,]
-
 full=tree(affordabilitty~.,mindev=0,minsize=2,data=train_train)
 pred.full=predict(full,newdata=train_test,type="class")
 table(pred.full,train_test$affordabilitty)
-mean(pred.full==train_test$affordabilitty) #96.7 %
+mean(pred.full==train_test$affordabilitty)
 
 # Seeing which tree is best
 cvtree = cv.tree(full,FUN=prune.misclass)
 df = data.frame(size=cvtree$size,dev = cvtree$dev)
 df=df[order(df$dev),]
 df
-pruned = prune.misclass(full,best=10)
+pruned = prune.misclass(full,best=2)
 
 #Finding Results of Pruned Tree
 pred.pr = predict(pruned,newdata=train_test,type="class")
 table(pred.pr,train_test$affordabilitty)
-mean(pred.pr == train_test$affordabilitty) #94.8%
+mean(pred.pr == train_test$affordabilitty)
 
 
-# Random Forest
-rm1 = randomForest(affordabilitty~.,data=train_train,mtry=64,importance=TRUE,ntree=500)
-plot(rm1)
+# Bagging
+rm1 = randomForest(affordabilitty~.,data=train_train,mtry=66,importance=TRUE,ntree=2000)
 pred.rm=predict(rm1,data=train_train)
 table(train_train$affordabilitty,pred.rm)
 mean(train_train$affordabilitty==pred.rm)
 
 pred.rm=predict(rm1,newdata=train_test)
 table(train_test$affordabilitty,pred.rm)
-mean(train_test$affordabilitty==pred.rm) #96.8%
+mean(train_test$affordabilitty==pred.rm)
 
 df = importance(rm1)
 df = as.data.frame(df)
@@ -751,32 +1090,27 @@ df$rname = rownames(df)
 df = arrange(df,desc(MeanDecreaseAccuracy))
 df = df[,c(5,1,2,3,4)]
 df1 = arrange(df,desc(MeanDecreaseGini))
-varImpPlot(rm1,main="Variable Importance Plot")
 
 # df of Mean Decrease Accuracy Best
-MostImportantVar = c(df[1:12,1],df1[1:12,1])
+MostImportantVar = c(df[1:5,1],df1[1:5,1])
 x = which((table(MostImportantVar)==2)==TRUE)
 x1 = names(x)
 x1
 
-btrain$BsmtFinType1
-# Important Predictors
-m2 = randomForest(affordabilitty~A+C+D+E+I+L+Neighborhood+O+P+S+U,data=btrain,mtry=sqrt(11),importance=TRUE,ntree=5000)
+m2 = randomForest(affordabilitty~A+BsmtFinType1+C+E+L+M+Neighborhood+S+W,data=train_train,mtry=sqrt(9),importance=TRUE,ntree=1300)
+plot(m2)
 
-m3 = randomForest(affordabilitty~A+BB+BsmtFinType1+C+D+E+I+L+Neighborhood+S+W+Y,data=btrain,mtry=12,importance=TRUE,ntree=5000)
+m3 = randomForest(affordabilitty~A+BsmtFinType1+C+D+E+J+L+M+Neighborhood+O+S+W,data=train_train,mtry=sqrt(12),importance=TRUE,ntree=1200)
+plot(m3)
 
-m4 = randomForest(affordabilitty~A+BB+D+E+I+L+Neighborhood+S+W+Y,data=btrain,mtry=10,importance=TRUE,ntree=5000)
+m4 = randomForest(affordabilitty~A+C+E+Neighborhood+S+W,data=train_train,mtry=sqrt(6),importance=TRUE,ntree=1200)
+plot(m4)
 
-m5 = randomForest(affordabilitty~A+BB+Neighborhood+W+Y,data=btrain,mtry=5,importance=TRUE,ntree=5000)
+m5 = randomForest(affordabilitty~A+C+Neighborhood+W,data=train_train,mtry=sqrt(4),importance=TRUE,ntree=1000)
+plot(m5)
 
-m6= randomForest(affordabilitty~A+B+BB+BsmtFinType1+C+D+E+I+J+L+Neighborhood+O+P+S+SaleCondition+T+W+X+Y,data=btrain,mtry=19,importance=TRUE,ntree=5000)
-
-m7 =  randomForest(affordabilitty~A+BB+BsmtFinType1+C+D+E+I+L+Neighborhood+P+S+T+W+Y,data=btrain,mtry=14,importance=TRUE,ntree=5000)
-
-
-m2 = randomForest(affordabilitty~Comp.1 + Comp.12 + Comp.16 + Comp.23 + Comp.3 + Comp.4 + Comp.5 + MSSubClass + Neighborhood, data=train_train,mtry=sqrt(9),importance=TRUE,ntree=5000)
 #Predicting Using M2
-pred.rm = predict(m2,data=train_train) #97.4
+pred.rm = predict(m2,data=train_train)
 table(train_train$affordabilitty,pred.rm)
 mean(train_train$affordabilitty==pred.rm)
 
@@ -784,173 +1118,84 @@ pred.rm = predict(m2,newdata=train_test)
 table(train_test$affordabilitty,pred.rm)
 mean(train_test$affordabilitty==pred.rm)
 
-#Predicting Using M3 (Best Result 0.988)
-pred.rm.t = predict(m3,newdata=btest)
-table(btest$affordabilitty,pred.rm.t)
-mean(btest$affordabilitty==pred.rm.t)
+#Predicting Using M3
+pred.rm = predict(m3,data=train_train)
+table(train_train$affordabilitty,pred.rm)
+mean(train_train$affordabilitty==pred.rm)
 
-pred.rm.t1 = predict(m3,date=btrain)
-mean(btrain$affordabilitty==pred.rm.t1)
+pred.rm = predict(m3,newdata=train_test)
+table(train_test$affordabilitty,pred.rm)
+mean(train_test$affordabilitty==pred.rm)
 
-# Predicting Using M4 (Best Result 0.988)
-pred.rm.t = predict(m4,newdata=btest)
-table(btest$affordabilitty,pred.rm.t)
-mean(btest$affordabilitty==pred.rm.t)
+#Predicting Using M4 (Best among Models)
+pred.rm = predict(m4,data=train_train)
+table(train_train$affordabilitty,pred.rm)
+mean(train_train$affordabilitty==pred.rm)
 
-pred.rm.t1 = predict(m4,data=btrain)
-table(btrain$affordabilitty,pred.rm.t1)
-mean(btrain$affordabilitty==pred.rm.t1)
+pred.rm = predict(m4,newdata=train_test)
+table(train_test$affordabilitty,pred.rm)
+mean(train_test$affordabilitty==pred.rm)
 
-# Predicting Using M5
-pred.rm.t = predict(m5,newdata=btest)
-table(btest$affordabilitty,pred.rm.t)
-mean(btest$affordabilitty==pred.rm.t)
+#Predicting Using M5
+pred.rm = predict(m5,data=train_train)
+table(train_train$affordabilitty,pred.rm)
+mean(train_train$affordabilitty==pred.rm)
 
-pred.rm.t1 = predict(m5,data=btrain)
-table(btrain$affordabilitty,pred.rm.t1)
-mean(btrain$affordabilitty==pred.rm.t1)
+pred.rm = predict(m5,newdata=train_test)
+table(train_test$affordabilitty,pred.rm)
+mean(train_test$affordabilitty==pred.rm)
 
-# Predicting Using M6
-pred.rm.t = predict(m6,newdata=btest)
-table(btest$affordabilitty,pred.rm.t)
-mean(btest$affordabilitty==pred.rm.t)
-
-pred.rm.t1 = predict(m5,data=btrain)
-table(btrain$affordabilitty,pred.rm.t1)
-mean(btrain$affordabilitty==pred.rm.t1)
-
-# Predicting Using M7
-pred.rm.t = predict(m7,newdata=btest)
-table(btest$affordabilitty,pred.rm.t)
-mean(btest$affordabilitty==pred.rm.t)
-
-pred.rm.t1 = predict(m7,data=btrain)
-table(btrain$affordabilitty,pred.rm.t1)
-mean(btrain$affordabilitty==pred.rm.t1)
-
-x = tuneRF(btrain[,colnames(btrain)!="affordabilitty"], btrain$affordabilitty, main="Mtry Plot")
-
-library(ggpubr)
-ggexport(plotlist = list(x),filename = "PCA.png")
-```
+dfMultiple = data.frame(A=rep(NA,nrow(train_test)), B = rep(NA,nrow(train_test)), C = rep(NA,nrow(train_test)), D = rep(NA,nrow(train_test)),E = rep(NA,nrow(train_test)), F= rep(NA,nrow(train_test)))
 
 
-TESTING # This code part wont work for you because it uses files that are in my laptop
-```{r}
-# Important Predictors
-m2 = randomForest(affordabilitty~A+AA+B+BB+BsmtFinType1+C+D+E+Exterior2nd+H+I+J+L+N+Neighborhood+P+Q+R+S+T+U+W+X+Y+Z,data=training1,mtry=25,importance=TRUE,ntree=5000) 
-m3 = randomForest(affordabilitty~.,data=training1,mtry=71,importance=TRUE,ntree=5000)
-pred.rm = predict(m2,newdata=testing1)
-pred.rm2 = predict(m3,newdata=testing1)
-
-
-Attempt13 = data.frame(Ob=c(1:1500),affordabilitty=pred.rm)
-Attempt13
-write.csv(Attempt13,file="Attempt13.csv",row.names=FALSE)
-
-
-# Reading in previous 
-attempt5 = read.csv("Attempt5.csv")
-attempt10 = read.csv("Attempt10.csv")
-
-
-# Creating a dafa
-df = data.frame(Attempt13,affordabilitty2 = attempt10$affordabilitty,affordabilitty3 = pred.rm2)
-
-
-df$affordabilitty = as.factor(df$affordabilitty)
-df$affordabilitty2 = as.factor(df$affordabilitty2)
-df$affordabilitty3 = as.factor(df$affordabilitty3)
-
-df$affordabilitty = revalue(df$affordabilitty,c("Unaffordable"="0","Affordable"="1"))
-df$affordabilitty2 = revalue(df$affordabilitty2,c("Unaffordable"="0","Affordable"="1"))
-df$affordabilitty3 = revalue(df$affordabilitty3,c("Unaffordable"="0","Affordable"="1"))
-
-df$affordabilitty = as.numeric(as.character(df$affordabilitty))
-df$affordabilitty2 = as.numeric(as.character(df$affordabilitty2))
-df$affordabilitty3 = as.numeric(as.character(df$affordabilitty3))
-
-df1 = df[,2:4]
-for(i in 1:nrow(df1)){
-  df1$Best[i] = names(sort(table(as.numeric(df1[i,1:3])),decreasing=TRUE))[1]
+for(i in 1:6){
+  m4 = randomForest(affordabilitty~A+C+E+Neighborhood+S+W,data=train_train,mtry=sqrt(6),importance=TRUE,ntree=1200)
+  dfMultiple[,i] = predict(m2,newdata=train_test)
+  dfMultiple[,i] = as.factor(dfMultiple[,i])
+  dfMultiple[,i] = revalue(dfMultiple[,i],c("Unaffordable"="0","Affordable"="1"))
+  dfMultiple[,i] = as.numeric(as.character(dfMultiple[,i]))
 }
 
-df$affordabilitty = as.factor(df$affordabilitty)
-df$affordabilitty2 = as.factor(df$affordabilitty2)
-df$affordabilitty3 = as.factor(df$affordabilitty3)
-df$Best = as.factor(df$Best)
 
-df$affordabilitty = revalue(df$affordabilitty ,c("0"="Unaffordable","1"="Affordable"))
-df$affordabilitty2 = revalue(df$affordabilitty2,c("0"="Unaffordable","1"="Affordable"))
-df$affordabilitty3 = revalue(df$affordabilitty3 ,c("0"="Unaffordable","1"="Affordable"))
-df$Best= revalue(df$Best ,c("0"="Unaffordable","1"="Affordable"))
+for(i in 1:nrow(dfMultiple)){
+  dfMultiple$Best[i] = names(sort(table(as.numeric(dfMultiple[i,1:6])),decreasing=TRUE))[1]
+}
 
-df[df$Best!=df$affordabilitty2,][,c(1,3,5)]
+dfMultiple$Best = as.factor(dfMultiple$Best)
+dfMultiple$Best = revalue(dfMultiple$Best,c("0"="Unaffordable","1"="Affordable")) # Results for prediction of testing using training data
 
-df[df$affordabilitty!=df$affordabilitty2,][,c(1,2,3)]
+table(train_test$affordabilitty,dfMultiple$Best)
+mean(train_test$affordabilitty==dfMultiple$Best)
 ```
 
 
-# Testing Part 2
+TESTING
 ```{r}
-m3 = randomForest(affordabilitty~A+BB+BsmtFinType1+C+D+E+I+L+Neighborhood+S+W+Y,data=training1,mtry=12,importance=TRUE,ntree=5000)
-pred.rm.t = predict(m3,newdata=testing1)
+m4 = randomForest(affordabilitty~A+C+E+Neighborhood+S+W,data=training1,mtry=sqrt(6),importance=TRUE,ntree=1200)
+plot(m4)
 
-m7 =  randomForest(affordabilitty~A+BB+BsmtFinType1+C+D+E+I+L+Neighborhood+P+S+T+W+Y,data=training1,mtry=14,importance=TRUE,ntree=5000)
-m8 = randomForest(affordabilitty~A+BB+BsmtFinType1+C+D+E+I+L+Neighborhood+P+S+T+W+Y+FireplaceQu+MSSubClass,data=training1,mtry=16,importance=TRUE,ntree=5000)
-pred.rm.t = predict(m8,newdata=testing1)
+dfMultiple = data.frame(A=rep(NA,nrow(testing1)), B = rep(NA,nrow(testing1)), C = rep(NA,nrow(testing1)), D = rep(NA,nrow(testing1)),E = rep(NA,nrow(testing1)), F= rep(NA,nrow(testing1)))
 
 
-Attempt5 = data.frame(Ob=c(1:1500),affordabilitty=pred.rm.t)
-
-write.csv(Attempt5,file="Attempt5.csv",row.names=FALSE)
-
-attempt10 = read.csv("Attempt10.csv")
-
-df = data.frame(attempt10,affordability1 = pred.rm.t)
-df
-df[df$affordabilitty!=df$affordabilitty1,]
-```
+for(i in 1:6){
+  m4 = randomForest(affordabilitty~A+C+E+Neighborhood+S+W,data=training1,mtry=sqrt(6),importance=TRUE,ntree=1200)
+  dfMultiple[,i] = predict(m2,newdata=testing1)
+  dfMultiple[,i] = as.factor(dfMultiple[,i])
+  dfMultiple[,i] = revalue(dfMultiple[,i],c("Unaffordable"="0","Affordable"="1"))
+  dfMultiple[,i] = as.numeric(as.character(dfMultiple[,i]))
+}
 
 
-# Testing Part 3
-```{r}
-colnames(btrain)
-mFull = randomForest(affordabilitty~.,data=btrain,mtry=15,importance=TRUE,ntree=770)
-plot(mFull)
-pred.rm.t = predict(mFull,newdata=btest)
-table(btest$affordabilitty,pred.rm.t)
-mean(btest$affordabilitty==pred.rm.t)
+for(i in 1:nrow(dfMultiple)){
+  dfMultiple$Best[i] = names(sort(table(as.numeric(dfMultiple[i,1:6])),decreasing=TRUE))[1]
+}
 
 
-df = importance(mFull)
-df = as.data.frame(df)
-df$rname = rownames(df)
-df = arrange(df,desc(MeanDecreaseAccuracy))
-df = df[,c(5,1,2,3,4)]
-df1 = arrange(df,desc(MeanDecreaseGini))
-varImpPlot(rm1,main="Variable Importance Plot")
-MostImportantVar = c(df[1:20,1],df1[1:20,1])
-x = which((table(MostImportantVar)==2)==TRUE)
-x1 = names(x)
-x1
 
-
-m2 = randomForest(affordabilitty~A+B+C+D+E+L+MSSubClass+Neighborhood+P+T+U, data=btrain,mtry=11,importance=TRUE,ntree=750)
-plot(m2)
-pred.rm.t = predict(m2,newdata=btest)
-table(btest$affordabilitty,pred.rm.t)
-mean(btest$affordabilitty==pred.rm.t)
+dfMultiple$Best = as.factor(dfMultiple$Best)
+dfMultiple$Best = revalue(dfMultiple$Best,c("0"="Unaffordable","1"="Affordable")) #Results for prediction of actual testing data
 
 ```
-
-
-
-
-
-
-
-
 
 
 
